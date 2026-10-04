@@ -167,11 +167,13 @@ def retry_drive(request):
         messages.success(request, "Aucune video en attente. Chargement des JSON debloque.")
         return redirect("home")
     sent, kept = 0, 0
+    last_problem = ""
     for local_path in pending:
         try:
             account_used, result = send_to_drive(local_path, local_path.name, lambda m: None)
         except Exception as e:
             messages.error(request, f"Erreur Drive pour {local_path.name} : {str(e)[:150]}")
+            last_problem = str(e)[:150]
             kept += 1
             continue
         if account_used:
@@ -181,6 +183,7 @@ def retry_drive(request):
             except OSError:
                 sent += 1
         else:
+            last_problem = str(result)
             kept += 1
     st = drive_load_state()
     if kept == 0:
@@ -189,10 +192,15 @@ def retry_drive(request):
         drive_save_state(st)
         messages.success(request, f"{sent} video(s) envoyee(s) sur Drive. Chargement des JSON debloque.")
     else:
+        if last_problem == "sature":
+            st["reason"] = "Les 4 comptes Google Drive sont satures."
+            summary = "Drive sature."
+        else:
+            st["reason"] = f"Dernier probleme : {last_problem} (connexion/proxy ?)."
+            summary = f"Envoi impossible ({last_problem}). Verifiez la connexion/proxy."
         st["blocked"] = True
-        st["reason"] = "Les 4 comptes Google Drive sont satures."
         drive_save_state(st)
-        messages.error(request, f"{sent} envoyee(s), {kept} gardee(s) : Drive toujours sature.")
+        messages.error(request, f"{sent} envoyee(s), {kept} gardee(s) : {summary}")
     return redirect("home")
 
 
