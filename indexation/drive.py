@@ -1,24 +1,37 @@
 """Envoi des videos vers Google Drive (multi-comptes avec rotation).
 
-Principe :
-- 4 comptes Google autorises une fois via OAuth (tokens dans drive_config/tokens/).
-- Chaque video est envoyee au premier compte ayant assez de quota (marge 100 Mo).
-- Ordre de rotation 1 -> 2 -> 3 -> 4, reprise apres le dernier compte utilise.
-- Si aucun compte n'a la place : la video reste en local + flag "blocked".
+Version HTTP directe (lib `requests`) : pas de client lourd, pas de document
+de decouverte a telecharger, proxy explicite. Robuste sur reseaux restreints.
 """
 import json
+import os
 from pathlib import Path
 
+import requests
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaFileUpload
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+API_BASE = "https://www.googleapis.com/drive/v3"
+UPLOAD_BASE = "https://www.googleapis.com/upload/drive/v3/files"
 SAFETY_MARGIN_BYTES = 100 * 1024 * 1024  # marge de securite exigee en plus du fichier
+TIMEOUT_GET = (30, 60)
+TIMEOUT_UPLOAD = (30, 600)
 
+
+class DriveError(Exception):
+    pass
+
+
+class DriveQuotaError(DriveError):
+    """Quota depasse (message contient storageQuotaExceeded)."""
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Configuration locale (secrets, tokens, dossiers, mapping, etat)
+# ---------------------------------------------------------------------------
 
 def config_dir():
     from django.conf import settings
@@ -81,14 +94,18 @@ def save_state(state):
     state_path().write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _verifier_path(account):
+    return config_dir() / f".verifier_{account}"
+
+
+# ---------------------------------------------------------------------------
+# OAuth (autorisation initiale, une fois par compte)
+# ---------------------------------------------------------------------------
+
 def build_flow(account):
     return InstalledAppFlow.from_client_secrets_file(
         str(secret_path(account)), SCOPES, redirect_uri="http://localhost"
     )
-
-
-def _verifier_path(account):
-    return config_dir() / f".verifier_{account}"
 
 
 def auth_url(account):
@@ -114,114 +131,148 @@ def finish_auth(account, code):
     return flow.credentials
 
 
-def _http_client():
-    """Client HTTP avec proxy explicite (les comptes gratuits exigent le proxy
-    et certaines libs ignorent les variables d'environnement)."""
-    import os
+# ---------------------------------------------------------------------------
+# Client API minimaliste
+# ---------------------------------------------------------------------------
 
-    import httplib2
-
+def _proxy_dict():
     proxy_url = os.environ.get("https_proxy") or os.environ.get("http_proxy")
     if proxy_url:
-        try:
-            return httplib2.Http(proxy_info=httplib2.proxy_info_from_url(proxy_url, "https"))
-        except Exception:
-            pass
-    return httplib2.Http()
+        return {"http": proxy_url, "https": proxy_url}
+    return {}
 
 
-def get_service(account):
-    from google_auth_httplib2 import AuthorizedHttp
-
+def _load_creds(account):
     creds = Credentials.from_authorized_user_file(str(token_path(account)), SCOPES)
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
         token_path(account).write_text(creds.to_json(), encoding="utf-8")
-    return build("drive", "v3", http=AuthorizedHttp(creds, http=_http_client()))
+    if not creds.token:
+        raise DriveError(f"Compte {account} : aucun jeton d'acces (re-autorisez le compte).")
+    return creds
 
 
-def account_email(service):
-    about = service.about().get(fields="user(emailAddress)").execute()
-    return about.get("user", {}).get("emailAddress", "?")
+class DriveAPI:
+    """Un compte Google Drive, appels REST directs."""
+
+    def __init__(self, account):
+        self.account = account
+        self._creds = _load_creds(account)
+
+    def _headers(self):
+        return {"Authorization": f"Bearer {self._creds.token}"}
+
+    def _call(self, method, url, retry_auth=True, **kwargs):
+        kwargs.setdefault("timeout", TIMEOUT_GET)
+        kwargs["proxies"] = _proxy_dict()
+        headers = kwargs.pop("headers", {})
+        headers["Authorization"] = f"Bearer {self._creds.token}"
+        try:
+            resp = requests.request(method, url, headers=headers, **kwargs)
+        except requests.RequestException as e:
+            raise DriveError(f"Reseau : {e}")
+        if resp.status_code == 401 and retry_auth and self._creds.refresh_token:
+            try:
+                self._creds.refresh(Request())
+                token_path(self.account).write_text(self._creds.to_json(), encoding="utf-8")
+            except Exception as e:
+                raise DriveError(f"Re-authentification impossible : {e}")
+            return self._call(method, url, retry_auth=False, **kwargs)
+        if resp.status_code in (403, 429):
+            body = resp.text[:300]
+            if "storageQuotaExceeded" in body or "quotaExceeded" in body:
+                raise DriveQuotaError(f"storageQuotaExceeded (compte {self.account})")
+            raise DriveError(f"HTTP {resp.status_code} : {body}")
+        if resp.status_code >= 400:
+            raise DriveError(f"HTTP {resp.status_code} : {resp.text[:300]}")
+        return resp
+
+    def email(self):
+        data = self._call("GET", f"{API_BASE}/about",
+                          params={"fields": "user(emailAddress)"}).json()
+        return data.get("user", {}).get("emailAddress", "?")
+
+    def quota(self):
+        q = self._call("GET", f"{API_BASE}/about",
+                       params={"fields": "storageQuota"}).json().get("storageQuota", {})
+        limit = q.get("limit")
+        usage = int(q.get("usage") or 0)
+        if limit is None:
+            return {"limited": False, "free": None, "usage": usage, "limit": None}
+        limit = int(limit)
+        return {"limited": True, "free": limit - usage, "usage": usage, "limit": limit}
+
+    def folder(self, folder_id):
+        try:
+            meta = self._call("GET", f"{API_BASE}/files/{folder_id}",
+                              params={"fields": "id,name,mimeType,capabilities",
+                                      "supportsAllDrives": "true"}).json()
+        except DriveError as e:
+            return {"ok": False, "error": str(e)[:200]}
+        caps = meta.get("capabilities", {})
+        return {"ok": True, "name": meta.get("name"), "writable": bool(caps.get("canAddChildren"))}
+
+    def find(self, folder_id, name):
+        safe = name.replace("'", "\\'")
+        data = self._call(
+            "GET", f"{API_BASE}/files",
+            params={"q": f"name='{safe}' and '{folder_id}' in parents and trashed=false",
+                    "fields": "files(id,name)",
+                    "supportsAllDrives": "true"}).json()
+        files = data.get("files", [])
+        return files[0]["id"] if files else None
+
+    def upload(self, folder_id, local_path, drive_name, update_id=None):
+        """Envoi avec reprise (resumable). Retourne l'ID du fichier."""
+        size = Path(local_path).stat().st_size
+        if update_id:
+            with open(local_path, "rb") as f:
+                resp = self._call(
+                    "PUT", f"{UPLOAD_BASE}/{update_id}",
+                    params={"uploadType": "media", "supportsAllDrives": "true"},
+                    headers={"Content-Type": "video/mp4"},
+                    data=f, timeout=TIMEOUT_UPLOAD)
+            return resp.json().get("id")
+        init = self._call(
+            "POST", UPLOAD_BASE,
+            params={"uploadType": "resumable", "supportsAllDrives": "true"},
+            headers={"Content-Type": "application/json; charset=UTF-8",
+                     "X-Upload-Content-Type": "video/mp4",
+                     "X-Upload-Content-Length": str(size)},
+            json={"name": drive_name, "parents": [folder_id]})
+        session_uri = init.headers.get("Location")
+        if not session_uri:
+            raise DriveError("Session d'upload non fournie par Google.")
+        with open(local_path, "rb") as f:
+            done = self._call("PUT", session_uri, headers={"Content-Type": "video/mp4"},
+                              data=f, timeout=TIMEOUT_UPLOAD)
+        return done.json().get("id")
 
 
-def quota_info(service):
-    q = service.about().get(fields="storageQuota").execute().get("storageQuota", {})
-    limit = q.get("limit")
-    usage = int(q.get("usage") or 0)
-    if limit is None:
-        return {"limited": False, "free": None, "usage": usage, "limit": None}
-    limit = int(limit)
-    return {"limited": True, "free": limit - usage, "usage": usage, "limit": limit}
+# Anciens noms conserves pour les commandes existantes
+def quota_info(api):
+    return api.quota()
 
 
-def check_folder(service, folder_id):
-    try:
-        meta = service.files().get(
-            fileId=folder_id,
-            fields="id,name,mimeType,capabilities",
-            supportsAllDrives=True,
-        ).execute()
-    except HttpError as e:
-        return {"ok": False, "error": str(e)[:200]}
-    caps = meta.get("capabilities", {})
-    return {"ok": True, "name": meta.get("name"), "writable": bool(caps.get("canAddChildren"))}
+def check_folder(api, folder_id):
+    return api.folder(folder_id)
 
 
-def upload_video(service, folder_id, local_path, drive_name):
-    media = MediaFileUpload(str(local_path), mimetype="video/mp4", resumable=True)
-    body = {"name": drive_name, "parents": [folder_id]}
-    return service.files().create(
-        body=body, media_body=media, fields="id,name,size", supportsAllDrives=True
-    ).execute()
+def account_email(api):
+    return api.email()
 
 
-def find_in_folder(service, folder_id, name):
-    """Retourne l'ID du fichier s'il existe deja dans le dossier, sinon None."""
-    safe = name.replace("'", "\\'")
-    res = service.files().list(
-        q=f"name='{safe}' and '{folder_id}' in parents and trashed=false",
-        fields="files(id,name)",
-        supportsAllDrives=True,
-    ).execute()
-    files = res.get("files", [])
-    return files[0]["id"] if files else None
+def upload_video(api, folder_id, local_path, drive_name):
+    return api.upload(folder_id, local_path, drive_name)
 
 
-def backup_site_json(log=None):
-    """Sauvegarde json_du_site.json dans le dossier prevu (compte 1).
-    Mise a jour si deja present, creation sinon. Ne leve jamais (log only).
-    Desactivee si YANABOU_NO_BACKUP=1 (tests)."""
-    import os
-    if os.environ.get("YANABOU_NO_BACKUP"):
-        return None
-    from django.conf import settings
-    site_json = Path(getattr(settings, "SITE_JSON_PATH"))
-    folder_id = getattr(settings, "DRIVE_BACKUP_FOLDER_ID", "")
-    if not site_json.exists() or not folder_id:
-        return None
-    try:
-        service = get_service(1)
-        media = MediaFileUpload(str(site_json), mimetype="application/json", resumable=True)
-        existing = find_in_folder(service, folder_id, site_json.name)
-        if existing:
-            updated = service.files().update(
-                fileId=existing, media_body=media, fields="id,modifiedTime",
-                supportsAllDrives=True).execute()
-            if log:
-                log(f"[Backup] json_du_site.json mis a jour sur Drive (compte 1).")
-            return updated.get("id")
-        created = service.files().create(
-            body={"name": site_json.name, "parents": [folder_id]},
-            media_body=media, fields="id", supportsAllDrives=True).execute()
-        if log:
-            log(f"[Backup] json_du_site.json sauvegarde sur Drive (compte 1).")
-        return created.get("id")
-    except Exception as e:
-        if log:
-            log(f"[Backup] ECHEC sauvegarde JSON : {str(e)[:150]} (le traitement continue).", level="error")
-        return None
+def get_service(account):
+    return DriveAPI(account)
 
+
+# ---------------------------------------------------------------------------
+# Envoi avec rotation stricte 1 -> 2 -> 3 -> 4
+# ---------------------------------------------------------------------------
 
 def send_to_drive(local_path, drive_name, log):
     """Envoie une video sur le compte prioritaire ayant la place.
@@ -243,12 +294,17 @@ def send_to_drive(local_path, drive_name, log):
     for entry in mapping:
         account = entry["account"]
         try:
-            service = get_service(account)
+            api = DriveAPI(account)
         except Exception as e:
             log(f"[Drive] Compte {account} : ERREUR authentification ({str(e)[:120]}) -> suivant.")
             tried += 1
             continue
-        already = find_in_folder(service, entry["folder_id"], drive_name)
+        try:
+            already = api.find(entry["folder_id"], drive_name)
+        except DriveError as e:
+            log(f"[Drive] Compte {account} : ERREUR verification ({str(e)[:120]}) -> suivant.")
+            tried += 1
+            continue
         if already:
             log(f"[Drive] {drive_name} deja present sur le compte {account} (anti-doublon).")
             state["last_account"] = account
@@ -256,7 +312,12 @@ def send_to_drive(local_path, drive_name, log):
             state["reason"] = ""
             save_state(state)
             return account, already
-        q = quota_info(service)
+        try:
+            q = api.quota()
+        except DriveError as e:
+            log(f"[Drive] Compte {account} : ERREUR quota ({str(e)[:120]}) -> suivant.")
+            tried += 1
+            continue
         if q["limited"] and q["free"] < size + SAFETY_MARGIN_BYTES:
             log(f"[Drive] Compte {account} ({entry.get('email')}) sature "
                 f"(libre {q['free'] // 1024 // 1024} Mo) -> suivant.")
@@ -264,19 +325,48 @@ def send_to_drive(local_path, drive_name, log):
             quota_blocks += 1
             continue
         try:
-            created = upload_video(service, entry["folder_id"], local_path, drive_name)
-        except HttpError as e:
-            if "storageQuotaExceeded" in str(e) or "quotaExceeded" in str(e):
-                log(f"[Drive] Compte {account} sature pendant l'upload -> suivant.")
-                tried += 1
-                quota_blocks += 1
-                continue
+            file_id = api.upload(entry["folder_id"], local_path, drive_name)
+        except DriveQuotaError:
+            log(f"[Drive] Compte {account} sature pendant l'upload -> suivant.")
+            tried += 1
+            quota_blocks += 1
+            continue
+        except DriveError:
             raise
         state["last_account"] = account
         state["blocked"] = False
         state["reason"] = ""
         save_state(state)
-        return account, created.get("id")
+        return account, file_id
     if tried > 0 and quota_blocks == tried:
         return None, "sature"
     return None, "erreur"
+
+
+def backup_site_json(log=None):
+    """Sauvegarde json_du_site.json dans le dossier prevu (compte 1).
+    Mise a jour si deja present, creation sinon. Ne leve jamais (log only).
+    Desactivee si YANABOU_NO_BACKUP=1 (tests)."""
+    if os.environ.get("YANABOU_NO_BACKUP"):
+        return None
+    from django.conf import settings
+    site_json = Path(getattr(settings, "SITE_JSON_PATH"))
+    folder_id = getattr(settings, "DRIVE_BACKUP_FOLDER_ID", "")
+    if not site_json.exists() or not folder_id:
+        return None
+    try:
+        api = DriveAPI(1)
+        existing = api.find(folder_id, site_json.name)
+        if existing:
+            file_id = api.upload(folder_id, site_json, site_json.name, update_id=existing)
+            if log:
+                log("[Backup] json_du_site.json mis a jour sur Drive (compte 1).", level="info")
+            return file_id
+        file_id = api.upload(folder_id, site_json, site_json.name)
+        if log:
+            log("[Backup] json_du_site.json sauvegarde sur Drive (compte 1).", level="info")
+        return file_id
+    except Exception as e:
+        if log:
+            log(f"[Backup] ECHEC sauvegarde JSON : {str(e)[:150]} (le traitement continue).", level="error")
+        return None
