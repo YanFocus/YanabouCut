@@ -114,12 +114,30 @@ def finish_auth(account, code):
     return flow.credentials
 
 
+def _http_client():
+    """Client HTTP avec proxy explicite (les comptes gratuits exigent le proxy
+    et certaines libs ignorent les variables d'environnement)."""
+    import os
+
+    import httplib2
+
+    proxy_url = os.environ.get("https_proxy") or os.environ.get("http_proxy")
+    if proxy_url:
+        try:
+            return httplib2.Http(proxy_info=httplib2.proxy_info_from_url(proxy_url, "https"))
+        except Exception:
+            pass
+    return httplib2.Http()
+
+
 def get_service(account):
+    from google_auth_httplib2 import AuthorizedHttp
+
     creds = Credentials.from_authorized_user_file(str(token_path(account)), SCOPES)
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
         token_path(account).write_text(creds.to_json(), encoding="utf-8")
-    return build("drive", "v3", credentials=creds)
+    return build("drive", "v3", http=AuthorizedHttp(creds, http=_http_client()))
 
 
 def account_email(service):
