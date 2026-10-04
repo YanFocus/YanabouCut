@@ -225,7 +225,7 @@ def run_job(searches, wait_seconds=None):
         _job_state["current_search"] = None
     _persist_status()
 
-    _push_log(f"Demarrage du traitement : {len(searches)} recherche(s). Pause 2-10s entre videos (espacement inter-recherches gere par le mode : boucle ou planification).")
+    _push_log(f"Demarrage : {len(searches)} recherche(s) a traiter.")
 
     site_json, videos_dir, _ = get_paths()
     keys = list(searches.keys())
@@ -238,25 +238,25 @@ def run_job(searches, wait_seconds=None):
         _persist_status()
 
         target = random.randint(2, 6)
-        _push_log(f"[{key}] Recherche lancee : \"{query}\" | objectif aleatoire = {target} video(s).")
+        _push_log(f"[{key}] Recherche : \"{query}\" - objectif {target} video(s).")
 
         # 1. Appel API
         try:
             hits = pixabay_search(query, api_key)
-            _push_log(f"[{key}] Pixabay a retourne {len(hits)} resultat(s) brut(s).")
+            _push_log(f"[{key}] Pixabay : {len(hits)} resultat(s).")
         except Exception as e:
-            _push_log(f"[{key}] ERREUR appel Pixabay : {e}", level="error")
+            _push_log(f"[{key}] ERREUR Pixabay : {e}", level="error")
             continue
 
         # 2. Filtrage <13s + 16:9
         filtered = filter_hits(hits)
-        _push_log(f"[{key}] Apres filtres (<13s + 16:9) : {len(filtered)} video(s) candidate(s).")
+        _push_log(f"[{key}] Filtres (<13s, 16:9) : {len(filtered)} video(s) gardee(s).")
         if not filtered:
-            _push_log(f"[{key}] 0 video apres verification -> passage a la recherche suivante.")
+            _push_log(f"[{key}] Aucune video valable : recherche suivante.")
             if idx < len(keys) - 1:
                 pause_search = wait_seconds if wait_seconds is not None else random.randint(10, 180)
                 if pause_search > 0:
-                    _push_log(f"[{key}] Pause aleatoire de {pause_search}s avant {keys[idx+1]}...")
+                    _push_log(f"[{key}] Pause {pause_search}s avant {keys[idx+1]}.")
                     time.sleep(pause_search)
             continue
 
@@ -270,14 +270,14 @@ def run_job(searches, wait_seconds=None):
                 break
             uid = str(cand.get("id"))
             if uid in existing_ids:
-                _push_log(f"[{key}] Video ID {uid} deja dans json_du_site.json -> video suivante.")
+                _push_log(f"[{key}] ID {uid} deja enregistre : suivante.")
                 continue
             # Nouveau nom via compteur persistant
             new_counter = int(state.get("counter", 0)) + 1
             new_name = f"video_{new_counter}"
             dest = videos_dir / f"{new_name}.mp4"
             video_url = cand.get("url") or ""
-            _push_log(f"[{key}] Telechargement {downloaded_this_search+1}/{target} : ID {uid} -> {new_name}.mp4 ...")
+            _push_log(f"[{key}] Telechargement {downloaded_this_search+1}/{target} : ID {uid} -> {new_name}.mp4")
             try:
                 download_video(video_url, dest)
             except Exception as e:
@@ -305,11 +305,11 @@ def run_job(searches, wait_seconds=None):
                 # Annule en memoire aussi (sinon compteur fausse par rapport au disque)
                 state["videos"].pop()
                 state["counter"] = new_counter - 1
-                _push_log(f"[{key}] ERREUR sauvegarde json_du_site.json : {last_err}", level="error")
+                _push_log(f"[{key}] ERREUR sauvegarde JSON : {last_err}", level="error")
                 continue
             existing_ids.add(uid)
             downloaded_this_search += 1
-            _push_log(f"[{key}] OK : {new_name}.mp4 enregistre (ID {uid}, tags : {tags_raw[:80]}). Compteur = {new_counter}.")
+            _push_log(f"[{key}] OK {new_name}.mp4 (ID {uid}) - compteur {new_counter}.")
 
             # 4. Envoi Google Drive OBLIGATOIRE : la video suivante n'est traitee
             # que si celle-ci est uploadee ET supprimee du site.
@@ -319,12 +319,12 @@ def run_job(searches, wait_seconds=None):
             drive_name = f"{new_name}.mp4"
             uploaded_ok = False
             for attempt in range(1, 4):
-                _push_log(f"[{key}] Envoi {drive_name} vers Google Drive (tentative {attempt}/3)...")
+                _push_log(f"[{key}] Envoi {drive_name} vers Drive (essai {attempt}/3).")
                 try:
                     account_used, drive_result = send_to_drive(dest, drive_name, lambda m: _push_log(f"[{key}] {m}"))
                 except Exception as e:
                     account_used, drive_result = None, "erreur"
-                    _push_log(f"[{key}] ERREUR Drive inattendue : {str(e)[:200]}", level="error")
+                    _push_log(f"[{key}] ERREUR Drive : {str(e)[:200]}", level="error")
                 if account_used:
                     uploaded_ok = True
                     break
@@ -335,11 +335,10 @@ def run_job(searches, wait_seconds=None):
                     st["blocked"] = True
                     st["reason"] = reason
                     drive_save_state(st)
-                    _push_log(f"[{key}] {new_name}.mp4 garde sur le site ({reason}). "
-                              f"ARRET du traitement + nouveaux JSON bloques.", level="error")
+                    _push_log(f"[{key}] {new_name}.mp4 garde en local ({reason}). ARRET + JSON bloques.", level="error")
                     stop_requested = True
                     break
-                _push_log(f"[{key}] Echec d'envoi ({drive_result}), nouvel essai de la MEME video...")
+                _push_log(f"[{key}] Echec envoi ({drive_result}) : nouvel essai meme video.", level="error")
                 time.sleep(10)
             if stop_requested:
                 break
@@ -348,8 +347,7 @@ def run_job(searches, wait_seconds=None):
                 st["blocked"] = True
                 st["reason"] = f"Echec d'envoi repete pour {drive_name}."
                 drive_save_state(st)
-                _push_log(f"[{key}] {new_name}.mp4 garde sur le site (3 echecs). "
-                          f"ARRET du traitement + nouveaux JSON bloques.", level="error")
+                _push_log(f"[{key}] {new_name}.mp4 garde en local (3 echecs). ARRET + JSON bloques.", level="error")
                 stop_requested = True
                 break
 
@@ -369,27 +367,26 @@ def run_job(searches, wait_seconds=None):
                 st["blocked"] = True
                 st["reason"] = f"Suppression locale impossible pour {drive_name}."
                 drive_save_state(st)
-                _push_log(f"[{key}] {drive_name} est sur Drive mais sa suppression echoue. "
-                          f"ARRET par securite (anti-doublon).", level="error")
+                _push_log(f"[{key}] Sur Drive mais suppression locale impossible. ARRET anti-doublon.", level="error")
                 stop_requested = True
                 break
-            _push_log(f"[{key}] {drive_name} bien recu sur Drive (compte {account_used}) et supprime du site.")
+            _push_log(f"[{key}] {drive_name} sur Drive (compte {account_used}), supprime du site.")
 
             if downloaded_this_search < target:
                 pause_video = random.randint(2, 10)
-                _push_log(f"[{key}] Pause aleatoire de {pause_video}s avant la video suivante...")
+                _push_log(f"[{key}] Pause {pause_video}s.")
                 time.sleep(pause_video)
 
         if stop_requested:
             break
-        _push_log(f"[{key}] Termine : {downloaded_this_search}/{target} video(s) telechargee(s). Passage a la suite.")
+        _push_log(f"[{key}] Fini : {downloaded_this_search}/{target} video(s).")
         if idx < len(keys) - 1:
             pause_search = wait_seconds if wait_seconds is not None else random.randint(10, 180)
             if pause_search > 0:
-                _push_log(f"Pause aleatoire de {pause_search}s ({pause_search // 60} min {pause_search % 60}s) avant {keys[idx+1]}...")
+                _push_log(f"Pause {pause_search}s ({pause_search // 60} min {pause_search % 60}s) avant {keys[idx+1]}.")
                 time.sleep(pause_search)
 
-    _push_log("Traitement termine pour toutes les recherches. Programme arrete : rechargez un nouveau JSON pour relancer.")
+    _push_log("Fini pour toutes les recherches. Rechargez un nouveau JSON pour relancer.")
     try:
         from indexation.drive import backup_site_json
         backup_site_json(lambda m, level="info": _push_log(m, level=level))
@@ -434,13 +431,13 @@ def run_all_queued():
             return False
         _job_state["queue_running"] = True
     _persist_status()
-    _push_log("Traitement automatique de tout le JSON lance.")
+    _push_log("Traitement auto de tout le JSON.")
     try:
         while process_next_queued():
             if next_queued_task() is None:
                 break
             pause = random.randint(pause_min, pause_max)
-            _push_log(f"Pause aleatoire de {pause}s avant la recherche suivante...")
+            _push_log(f"Pause {pause}s avant la suite.")
             time.sleep(pause)
     finally:
         with _job_lock:
@@ -609,13 +606,13 @@ def process_next_queued():
         _job_state["logs"] = list(prev.get("logs", []))[-200:]
     acquired, lock_age = acquire_cron_lock()
     if not acquired:
-        age_txt = f" (age {int(lock_age)}s)" if lock_age else ""
-        _push_log(f"Un autre passage est deja en cours{age_txt}, abandon.")
+        age_txt = f"{int(lock_age)}s" if lock_age else "?"
+        _push_log(f"Passage occupe (attente {age_txt}), abandon.")
         return False
     try:
         task = next_queued_task()
         if task is None:
-            _push_log("File d'attente vide : rien a traiter.")
+            _push_log("File vide : rien a faire.")
             with _job_lock:
                 _job_state["running"] = False
             _persist_status()
@@ -623,18 +620,18 @@ def process_next_queued():
         fpath, key, query = task
         from indexation.drive import load_state as drive_load_state
         if drive_load_state().get("blocked"):
-            _push_log("Envoi Drive bloque : passage ignore en attendant une liberation (bouton Reessayer).")
+            _push_log("Drive bloque : passage ignore (bouton Reessayer).")
             with _job_lock:
                 _job_state["running"] = False
             _persist_status()
             return False
-        _push_log(f"Passage planifie : traitement de {key} (fichier {fpath.name}).")
+        _push_log(f"Passage : {key} ({fpath.name}).")
         run_job({key: query})
         if drive_load_state().get("blocked"):
-            _push_log("Envoi Drive bloque : recherche gardee pour reessai ulterieur.")
+            _push_log("Drive bloque : recherche gardee pour reessai.")
             return False
         mark_search_done(fpath, key)
-        _push_log(f"{key} termine et marque comme traite.")
+        _push_log(f"{key} finie et archivee.")
         return True
     finally:
         release_cron_lock()

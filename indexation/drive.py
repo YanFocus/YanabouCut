@@ -297,17 +297,17 @@ def send_to_drive(local_path, drive_name, log):
         try:
             api = DriveAPI(account)
         except Exception as e:
-            log(f"[Drive] Compte {account} : ERREUR authentification ({str(e)[:120]}) -> suivant.")
+            log(f"[Drive] Compte {account} : auth impossible ({str(e)[:120]}) : suivant.")
             tried += 1
             continue
         try:
             already = api.find(entry["folder_id"], drive_name)
         except DriveError as e:
-            log(f"[Drive] Compte {account} : ERREUR verification ({str(e)[:120]}) -> suivant.")
+            log(f"[Drive] Compte {account} : verification impossible ({str(e)[:120]}) : suivant.")
             tried += 1
             continue
         if already:
-            log(f"[Drive] {drive_name} deja present sur le compte {account} (anti-doublon).")
+            log(f"[Drive] {drive_name} deja sur le compte {account} : pas de doublon.")
             state["last_account"] = account
             state["blocked"] = False
             state["reason"] = ""
@@ -316,22 +316,22 @@ def send_to_drive(local_path, drive_name, log):
         try:
             q = api.quota()
         except DriveError as e:
-            log(f"[Drive] Compte {account} : ERREUR quota ({str(e)[:120]}) -> suivant.")
+            log(f"[Drive] Compte {account} : quota illisible ({str(e)[:120]}) : suivant.")
             tried += 1
             continue
         if q["limited"] and q["free"] < size + SAFETY_MARGIN_BYTES:
-            log(f"[Drive] Compte {account} ({entry.get('email')}) sature "
-                f"(libre {q['free'] // 1024 // 1024} Mo) -> suivant.")
+            log(f"[Drive] Compte {account} ({entry.get('email')}) plein "
+                f"({q['free'] // 1024 // 1024} Mo libres) : suivant.")
             tried += 1
             quota_blocks += 1
             continue
         try:
             file_id = api.upload(entry["folder_id"], local_path, drive_name)
         except DriveQuotaError:
-            log(f"[Drive] Compte {account} sature pendant l'upload -> suivant.")
-            tried += 1
-            quota_blocks += 1
-            continue
+                log(f"[Drive] Compte {account} plein pendant l'envoi : suivant.")
+                tried += 1
+                quota_blocks += 1
+                continue
         except DriveError:
             raise
         state["last_account"] = account
@@ -361,13 +361,13 @@ def backup_site_json(log=None):
         if existing:
             file_id = api.upload(folder_id, site_json, site_json.name, update_id=existing)
             if log:
-                log("[Backup] json_du_site.json mis a jour sur Drive (compte 1).", level="info")
+                log("[Backup] JSON mis a jour sur Drive (compte 1).", level="info")
             return file_id
         file_id = api.upload(folder_id, site_json, site_json.name)
         if log:
-            log("[Backup] json_du_site.json sauvegarde sur Drive (compte 1).", level="info")
+            log("[Backup] JSON sauvegarde sur Drive (compte 1).", level="info")
         return file_id
     except Exception as e:
         if log:
-            log(f"[Backup] ECHEC sauvegarde JSON : {str(e)[:150]} (le traitement continue).", level="error")
+            log(f"[Backup] ECHEC : {str(e)[:150]} (suite du traitement OK).", level="error")
         return None
