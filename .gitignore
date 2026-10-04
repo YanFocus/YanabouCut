@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Django
+db.sqlite3
+staticfiles/
+
+# YanabouCut - donnees d'execution (jamais sur GitHub)
+json_du_site*.json
+job_status.json
+downloaded_videos/
+job_queue/
+
+# YanabouCut - secrets Google et etats (JAMAIS sur GitHub)
+drive_config/secrets/
+drive_config/tokens/
+drive_config/drive_mapping.json
+drive_config/drive_state.json
+drive_config/.verifier_*
+
+# Divers
+.env
+*.log

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YanabouCut - Recherche Pixabay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen">
+    <div class="max-w-6xl mx-auto px-4 py-10">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-extrabold text-indigo-600 mb-2">YanabouCut</h1>
+            <p class="text-gray-600">{% if queue_mode %}Upload JSON &rarr; file d'attente &rarr; 1 recherche par passage &rarr; Pixabay (&lt;13s, 16:9) &rarr; tirage 2-6 &rarr; download video_N &rarr; envoi Drive + suppression &rarr; pause aleatoire 30s-2min entre recherches{% else %}Upload JSON &rarr; Pixabay (&lt;13s, 16:9) &rarr; tirage 2-6 &rarr; download video_N &rarr; pauses aleatoires (2-10s / 30s-2min) &rarr; arret en fin de JSON{% endif %}</p>
+        </header>
+
+        <!-- Etat compteur + download json_du_site.json -->
+        <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-xl font-bold">Compteur du site</h2>
+                    <p class="text-sm text-gray-500">Videos enregistrees : <strong class="text-indigo-600">{{ total_videos_downloaded }}</strong>
+                        | Compteur : <strong class="text-indigo-600">{{ current_counter }}</strong>
+                        | Prochaine : <strong class="text-green-600">video_{{ next_video }}</strong></p>
+                    {% if job_running %}
+                        <p class="mt-1 text-sm font-semibold text-orange-600">Traitement EN COURS{% if job.current_search %} : {{ job.current_search }}{% endif %}</p>
+                    {% else %}
+                        <p class="mt-1 text-sm text-gray-500">Aucun traitement en cours.</p>
+                    {% endif %}
+                </div>
+                <div>
+                    {% if json_available %}
+                        <a href="{% url 'download-json' %}" class="inline-block bg-green-600 text-white font-semibold py-2 px-5 rounded-md hover:bg-green-700">Telecharger json_du_site.json</a>
+                    {% else %}
+                        <span class="inline-block bg-gray-200 text-gray-500 font-semibold py-2 px-5 rounded-md">json_du_site.json : pas encore cree</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% if last_videos %}
+            <div class="mt-4 border-t pt-3">
+                <p class="text-sm font-semibold mb-1">Dernieres videos (compteur persistant) :</p>
+                <ul class="text-sm text-gray-600 space-y-1">
+                    {% for v in last_videos %}
+                    <li><strong>{{ v.nouveau_nom }}</strong> | ID {{ v.identifiant_unique }} | tags : {{ v.tags|truncatechars:80 }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Etat Google Drive -->
+        <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-xl font-bold">Google Drive</h2>
+                    {% if drive_state.blocked %}
+                        <p class="mt-1 text-sm font-semibold text-red-600">ENVOI DRIVE BLOQUE — chargement des nouveaux JSON bloque.</p>
+                        <p class="text-xs text-gray-500">{{ drive_state.reason }} Liberez de l'espace / corrigez puis reessayez.</p>
+                    {% else %}
+                        <p class="mt-1 text-sm text-green-700">Envois actifs (priorite compte 1, puis 2, 3, 4 si pleins).</p>
+                    {% endif %}
+                    {% if pending_videos %}
+                        <p class="text-sm text-gray-600 mt-1">Videos en attente sur le site ({{ pending_videos|length }}) :</p>
+                        <ul class="text-xs text-gray-500 list-disc list-inside">
+                            {% for v in pending_videos %}
+                            <li>{{ v }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
+                <div>
+                    <form method="POST" action="{% url 'retry-drive' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="inline-block bg-blue-600 text-white font-semibold py-2 px-5 rounded-md hover:bg-blue-700">Reessayer l'envoi Drive</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload -->
+        <div class="bg-white shadow-md rounded-lg p-6 max-w-xl mx-auto mb-6">
+            <form method="POST" enctype="multipart/form-data" class="space-y-4">
+                {% csrf_token %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Fichier JSON : {"recherche1": "dog in house", ...}</label>
+                    <input type="file" name="json_file" accept=".json,application/json" required
+                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                </div>
+                <button type="submit" class="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-indigo-700">
+                    {% if queue_mode %}Mettre en file d'attente{% else %}Lancer les recherches{% endif %}
+                </button>
+            </form>
+            {% if messages %}
+                {% for m in messages %}
+                    {% if m.tags == 'success' %}
+                    <div class="mt-4 p-3 bg-green-100 text-green-800 rounded-md text-sm">{{ m }}</div>
+                    {% else %}
+                    <div class="mt-4 p-3 bg-red-100 text-red-700 rounded-md text-sm">{{ m }}</div>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        </div>
+
+        <!-- File d'attente (mode heberge) -->
+        {% if queue_mode %}
+        <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold mb-2">File d'attente</h2>
+            <p class="text-xs text-gray-500 mb-3">La tache planifiee traite UNE recherche par passage. Uploadez vos JSON, ils seront traites un par un.</p>
+            {% if queued_files %}
+                <ul class="text-sm text-gray-600 space-y-1">
+                    {% for q in queued_files %}
+                    <li>{{ q.name }} : {{ q.done }}/{{ q.total }} recherche(s) traitee(s)</li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="text-sm text-gray-400 italic">File vide.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Journal processus en cours -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-xl font-bold">Journal du processus (temps reel)</h2>
+                <button onclick="location.reload()" class="text-sm bg-gray-200 px-3 py-1 rounded hover:bg-gray-300">Rafraichir</button>
+            </div>
+            <p class="text-xs text-gray-500 mb-3">Etapes dans l'ordre (haut &rarr; bas) : lancement recherche, tirage 2-6, appel Pixabay, filtrage, doublon ID, telechargement video_N, envoi Drive + suppression (obligatoires avant la video suivante), pauses aleatoires, erreurs.</p>
+            {% if job_logs %}
+                <div id="logs" class="bg-black text-green-300 font-mono text-xs rounded p-4 max-h-96 overflow-y-auto space-y-1">
+                    {% for log in job_logs %}
+                        <div><span class="text-gray-400">[{{ log.time }}]</span> {{ log.message }}</div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-sm text-gray-400 italic">Aucun log pour le moment. Lancez un traitement pour voir chaque etape ici.</p>
+            {% endif %}
+        </div>
+    </div>
+<script>
+// Auto-refresh du journal toutes les 5s pendant un traitement en cours
+{% if job_running %}
+setTimeout(function(){ location.reload(); }, 5000);
+{% endif %}
+// Affiche toujours le bas du journal (derniere etape en cours)
+var logBox = document.getElementById('logs');
+if (logBox) { logBox.scrollTop = logBox.scrollHeight; }
+</script>
+</body>
+</html>
