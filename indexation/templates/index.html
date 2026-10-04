@@ -181,7 +181,7 @@
         {% if queue_mode %}
         <div class="card">
             <h2>File d'attente</h2>
-            <p class="small" style="margin-bottom:10px;">La tache planifiee traite UNE recherche par passage. Ou lancez vous-meme ci-dessous.</p>
+            <p class="small" style="margin-bottom:10px;">Le bouton ci-dessous lance toutes les recherches a la suite (pause 10s-3min entre elles). La tache planifiee, elle, traite UNE recherche par passage.</p>
             {% if queued_files %}
                 <ul class="list">
                     {% for q in queued_files %}
@@ -193,7 +193,7 @@
             {% endif %}
             <form method="POST" action="{% url 'run-queue' %}" class="stack" style="margin-top:12px;">
                 {% csrf_token %}
-                <button type="submit" class="btn indigo">Lancer le traitement (1 recherche)</button>
+                <button type="submit" class="btn indigo">Lancer le traitement (tout le JSON)</button>
             </form>
         </div>
         {% endif %}

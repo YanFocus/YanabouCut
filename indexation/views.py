@@ -15,6 +15,7 @@ from .services import (
     load_site_json,
     load_status_file,
     queue_dirs,
+    start_all_queued_async,
     start_job_async,
     start_next_queued_async,
 )
@@ -120,7 +121,7 @@ def index(request):
         "total_videos_downloaded": total,
         "last_videos": last_videos,
         "job": job,
-        "job_running": job["running"],
+        "job_running": job["running"] or job.get("queue_running", False),
         "job_logs": job["logs"],
         "drive_state": drive_load_state(),
         "pending_videos": [p.name for p in _pending_videos()],
@@ -130,7 +131,7 @@ def index(request):
 
 
 def run_queued(request):
-    """Bouton web : lance UNE recherche de la file en tache de fond."""
+    """Bouton web : lance le traitement AUTOMATIQUE de tout le JSON en file."""
     if request.method != "POST":
         return redirect("home")
     drive_state = drive_load_state()
@@ -139,10 +140,10 @@ def run_queued(request):
                                 "Cliquez sur « Reessayer l'envoi Drive » apres correction.")
     elif not next_task_available():
         messages.error(request, "File d'attente vide : uploadez d'abord un JSON.")
-    elif not start_next_queued_async():
+    elif not start_all_queued_async():
         messages.error(request, "Un traitement est deja en cours, attendez sa fin.")
     else:
-        messages.success(request, "Traitement d'une recherche lance. Suivez le journal ci-dessous.")
+        messages.success(request, "Traitement automatique lance : toutes les recherches vont s'enchainer. Suivez le journal.")
     return redirect("home")
 
 
@@ -221,6 +222,7 @@ def job_status_api(request):
     job = get_job_status()
     return JsonResponse({
         "running": job["running"],
+        "queue_running": job.get("queue_running", False),
         "current_search": job["current_search"],
         "started_at": job["started_at"],
         "finished_at": job["finished_at"],

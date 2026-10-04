@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 _job_lock = threading.Lock()
 _job_state = {
     "running": False,
+    "queue_running": False,
     "logs": [],
     "current_search": None,
     "started_at": None,
@@ -88,6 +89,7 @@ def _persist_status():
         with _job_lock:
             snapshot = {
                 "running": _job_state["running"],
+                "queue_running": _job_state["queue_running"],
                 "current_search": _job_state["current_search"],
                 "started_at": _job_state["started_at"],
                 "finished_at": _job_state["finished_at"],
@@ -111,6 +113,7 @@ def get_job_status():
     with _job_lock:
         return {
             "running": _job_state["running"],
+            "queue_running": _job_state["queue_running"],
             "current_search": _job_state["current_search"],
             "started_at": _job_state["started_at"],
             "finished_at": _job_state["finished_at"],
@@ -402,7 +405,7 @@ def run_job(searches, wait_seconds=None):
 
 def start_job_async(searches, wait_seconds=None):
     with _job_lock:
-        if _job_state["running"]:
+        if _job_state["running"] or _job_state["queue_running"]:
             return False
     t = threading.Thread(target=run_job, args=(searches, wait_seconds), daemon=True)
     t.start()
@@ -410,12 +413,51 @@ def start_job_async(searches, wait_seconds=None):
 
 
 def start_next_queued_async():
-    """Lance UNE recherche de la file en tache de fond (bouton web).
+    """Lance UNE recherche de la file en tache de fond.
     Retourne False si un traitement tourne deja."""
     with _job_lock:
-        if _job_state["running"]:
+        if _job_state["running"] or _job_state["queue_running"]:
             return False
     t = threading.Thread(target=process_next_queued, daemon=True)
+    t.start()
+    return True
+
+
+def run_all_queued():
+    """Traite TOUTE la file (recherche par recherche) avec pause aleatoire
+    10s-3min entre recherches. S'arrete si file vide ou Drive bloque."""
+    from django.conf import settings
+    pause_min = int(getattr(settings, "QUEUE_SEARCH_PAUSE_MIN", 10))
+    pause_max = int(getattr(settings, "QUEUE_SEARCH_PAUSE", 180))
+    with _job_lock:
+        if _job_state["running"] or _job_state["queue_running"]:
+            return False
+        _job_state["queue_running"] = True
+    _persist_status()
+    _push_log("Traitement automatique de tout le JSON lance.")
+    try:
+        while process_next_queued():
+            if next_queued_task() is None:
+                break
+            pause = random.randint(pause_min, pause_max)
+            _push_log(f"Pause aleatoire de {pause}s avant la recherche suivante...")
+            time.sleep(pause)
+    finally:
+        with _job_lock:
+            _job_state["queue_running"] = False
+            if not _job_state["running"]:
+                _job_state["current_search"] = None
+        _persist_status()
+    return True
+
+
+def start_all_queued_async():
+    """Lance le traitement automatique complet en tache de fond.
+    Retourne False si un traitement tourne deja."""
+    with _job_lock:
+        if _job_state["running"] or _job_state["queue_running"]:
+            return False
+    t = threading.Thread(target=run_all_queued, daemon=True)
     t.start()
     return True
 
@@ -516,8 +558,8 @@ def load_status_file():
     """Etat ecrit par _persist_status (utilise par la page web en mode queue,
     car le processus planifie est separe du processus web)."""
     _, _, status_path = get_paths()
-    default = {"running": False, "current_search": None, "started_at": None,
-               "finished_at": None, "logs": []}
+    default = {"running": False, "queue_running": False, "current_search": None,
+               "started_at": None, "finished_at": None, "logs": []}
     if status_path.exists():
         try:
             data = json.loads(status_path.read_text(encoding="utf-8"))
