@@ -9,7 +9,7 @@ from indexation.services import process_next_queued
 class Command(BaseCommand):
     help = ("Traite la file d'attente (UNE recherche par passage, sans pause "
             "longue). Avec --loop : vide toute la file avec une pause "
-            "aleatoire 30s-2min entre recherches.")
+            "aleatoire 10s-3min entre recherches.")
 
     def add_arguments(self, parser):
         parser.add_argument("--loop", action="store_true",

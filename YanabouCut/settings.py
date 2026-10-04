@@ -134,9 +134,9 @@ DRIVE_BACKUP_FOLDER_ID = os.environ.get('DRIVE_BACKUP_FOLDER_ID', '139P1RAUHCZBq
 PIPELINE_MODE = os.environ.get('PIPELINE_MODE', 'thread')
 QUEUE_DIR = BASE_DIR / 'job_queue'
 # Pause entre deux recherches en mode boucle : tirage aleatoire entre
-# 30 secondes et QUEUE_SEARCH_PAUSE (2 min par defaut, marge de securite).
-QUEUE_SEARCH_PAUSE = int(os.environ.get('QUEUE_SEARCH_PAUSE', '120'))
-QUEUE_SEARCH_PAUSE_MIN = int(os.environ.get('QUEUE_SEARCH_PAUSE_MIN', '30'))
+# QUEUE_SEARCH_PAUSE_MIN (10 s par defaut) et QUEUE_SEARCH_PAUSE (3 min par defaut).
+QUEUE_SEARCH_PAUSE = int(os.environ.get('QUEUE_SEARCH_PAUSE', '180'))
+QUEUE_SEARCH_PAUSE_MIN = int(os.environ.get('QUEUE_SEARCH_PAUSE_MIN', '10'))
 
 
 # Email

@@ -205,7 +205,7 @@ def run_job(searches, wait_seconds=None):
         (nouveau_nom, identifiant_unique, tags uniquement)
       - pause aleatoire 2-10s entre chaque video
       - si epuise (0..5 obtenus) -> recherche suivante
-      - pause aleatoire 30s-2min entre recherches (sauf apres la derniere)
+      - pause aleatoire 10s-3min entre recherches (sauf apres la derniere)
     A la fin de la derniere recherche : arret total, attente d'un nouveau JSON.
     wait_seconds : si defini (tests), force la pause inter-recherches ;
       sinon tirage aleatoire 60-900s.
@@ -251,7 +251,7 @@ def run_job(searches, wait_seconds=None):
         if not filtered:
             _push_log(f"[{key}] 0 video apres verification -> passage a la recherche suivante.")
             if idx < len(keys) - 1:
-                pause_search = wait_seconds if wait_seconds is not None else random.randint(30, 120)
+                pause_search = wait_seconds if wait_seconds is not None else random.randint(10, 180)
                 if pause_search > 0:
                     _push_log(f"[{key}] Pause aleatoire de {pause_search}s avant {keys[idx+1]}...")
                     time.sleep(pause_search)
@@ -381,7 +381,7 @@ def run_job(searches, wait_seconds=None):
             break
         _push_log(f"[{key}] Termine : {downloaded_this_search}/{target} video(s) telechargee(s). Passage a la suite.")
         if idx < len(keys) - 1:
-            pause_search = wait_seconds if wait_seconds is not None else random.randint(30, 120)
+            pause_search = wait_seconds if wait_seconds is not None else random.randint(10, 180)
             if pause_search > 0:
                 _push_log(f"Pause aleatoire de {pause_search}s ({pause_search // 60} min {pause_search % 60}s) avant {keys[idx+1]}...")
                 time.sleep(pause_search)
