@@ -226,9 +226,10 @@ class DriveAPI:
         """Envoi avec reprise (resumable). Retourne l'ID du fichier."""
         size = Path(local_path).stat().st_size
         if update_id:
+            # Mise a jour du contenu : PATCH (PUT renvoie 404 sur cette route)
             with open(local_path, "rb") as f:
                 resp = self._call(
-                    "PUT", f"{UPLOAD_BASE}/{update_id}",
+                    "PATCH", f"{UPLOAD_BASE}/{update_id}",
                     params={"uploadType": "media", "supportsAllDrives": "true"},
                     headers={"Content-Type": "video/mp4"},
                     data=f, timeout=TIMEOUT_UPLOAD)
