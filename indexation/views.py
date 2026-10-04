@@ -16,6 +16,7 @@ from .services import (
     load_status_file,
     queue_dirs,
     start_job_async,
+    start_next_queued_async,
 )
 from indexation.drive import load_state as drive_load_state
 from indexation.drive import save_state as drive_save_state
@@ -126,6 +127,28 @@ def index(request):
         "queue_mode": queue_mode,
         "queued_files": queued_files,
     })
+
+
+def run_queued(request):
+    """Bouton web : lance UNE recherche de la file en tache de fond."""
+    if request.method != "POST":
+        return redirect("home")
+    drive_state = drive_load_state()
+    if drive_state.get("blocked"):
+        messages.error(request, f"Traitement bloque ({drive_state.get('reason', 'envoi Drive impossible')}). "
+                                "Cliquez sur « Reessayer l'envoi Drive » apres correction.")
+    elif not next_task_available():
+        messages.error(request, "File d'attente vide : uploadez d'abord un JSON.")
+    elif not start_next_queued_async():
+        messages.error(request, "Un traitement est deja en cours, attendez sa fin.")
+    else:
+        messages.success(request, "Traitement d'une recherche lance. Suivez le journal ci-dessous.")
+    return redirect("home")
+
+
+def next_task_available():
+    from .services import next_queued_task
+    return next_queued_task() is not None
 
 
 def retry_drive(request):

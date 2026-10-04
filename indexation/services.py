@@ -288,10 +288,21 @@ def run_job(searches, wait_seconds=None):
             }
             state.setdefault("videos", []).append(entry)
             state["counter"] = new_counter
-            try:
-                save_site_json(state)
-            except Exception as e:
-                _push_log(f"[{key}] ERREUR sauvegarde json_du_site.json : {e}", level="error")
+            saved_ok = False
+            last_err = None
+            for _ in range(3):
+                try:
+                    save_site_json(state)
+                    saved_ok = True
+                    break
+                except Exception as e:
+                    last_err = e
+                    time.sleep(1)
+            if not saved_ok:
+                # Annule en memoire aussi (sinon compteur fausse par rapport au disque)
+                state["videos"].pop()
+                state["counter"] = new_counter - 1
+                _push_log(f"[{key}] ERREUR sauvegarde json_du_site.json : {last_err}", level="error")
                 continue
             existing_ids.add(uid)
             downloaded_this_search += 1
@@ -375,16 +386,16 @@ def run_job(searches, wait_seconds=None):
                 _push_log(f"Pause aleatoire de {pause_search}s ({pause_search // 60} min {pause_search % 60}s) avant {keys[idx+1]}...")
                 time.sleep(pause_search)
 
-    with _job_lock:
-        _job_state["running"] = False
-        _job_state["current_search"] = None
-        _job_state["finished_at"] = datetime.now().isoformat()
     _push_log("Traitement termine pour toutes les recherches. Programme arrete : rechargez un nouveau JSON pour relancer.")
     try:
         from indexation.drive import backup_site_json
         backup_site_json(lambda m, level="info": _push_log(m, level=level))
     except Exception:
         pass
+    with _job_lock:
+        _job_state["running"] = False
+        _job_state["current_search"] = None
+        _job_state["finished_at"] = datetime.now().isoformat()
     _persist_status()
     return True
 
@@ -394,6 +405,17 @@ def start_job_async(searches, wait_seconds=None):
         if _job_state["running"]:
             return False
     t = threading.Thread(target=run_job, args=(searches, wait_seconds), daemon=True)
+    t.start()
+    return True
+
+
+def start_next_queued_async():
+    """Lance UNE recherche de la file en tache de fond (bouton web).
+    Retourne False si un traitement tourne deja."""
+    with _job_lock:
+        if _job_state["running"]:
+            return False
+    t = threading.Thread(target=process_next_queued, daemon=True)
     t.start()
     return True
 
@@ -507,22 +529,25 @@ def load_status_file():
     return default
 
 
-def acquire_cron_lock(max_age_hours=3):
-    """Verrou fichier anti-chevauchement. Retourne True si acquis."""
+def acquire_cron_lock(max_age_hours=1):
+    """Verrou fichier anti-chevauchement. Retourne True si acquis.
+    Un verrou plus vieux que max_age_hours est considere comme abandonne
+    (plantage) et repris. Retourne (acquis, age_secondes)."""
     base, _, _ = queue_dirs()
     lock = base / ".lock"
+    age = None
     if lock.exists():
         try:
             age = (datetime.now() - datetime.fromisoformat(lock.read_text(encoding="utf-8").strip())).total_seconds()
             if age < max_age_hours * 3600:
-                return False
+                return False, age
         except Exception:
-            return False
+            return False, age
     try:
         lock.write_text(datetime.now().isoformat(), encoding="utf-8")
-        return True
+        return True, age
     except OSError:
-        return False
+        return False, age
 
 
 def release_cron_lock():
@@ -540,8 +565,10 @@ def process_next_queued():
     prev = load_status_file()
     with _job_lock:
         _job_state["logs"] = list(prev.get("logs", []))[-200:]
-    if not acquire_cron_lock():
-        _push_log("Un autre passage est deja en cours, abandon.")
+    acquired, lock_age = acquire_cron_lock()
+    if not acquired:
+        age_txt = f" (age {int(lock_age)}s)" if lock_age else ""
+        _push_log(f"Un autre passage est deja en cours{age_txt}, abandon.")
         return False
     try:
         task = next_queued_task()

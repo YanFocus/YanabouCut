@@ -14,9 +14,15 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--loop", action="store_true",
                             help="Traite les recherches une par une jusqu'a vider la file")
+        parser.add_argument("--force", action="store_true",
+                            help="Supprime un verrou abandonne avant de demarrer")
 
     def handle(self, *args, **options):
         from django.conf import settings
+        if options["force"]:
+            from indexation.services import release_cron_lock
+            release_cron_lock()
+            self.stdout.write("Verrou abandonne supprime.")
         pause_max = int(getattr(settings, "QUEUE_SEARCH_PAUSE", 180))
         pause_min = int(getattr(settings, "QUEUE_SEARCH_PAUSE_MIN", 30))
         if not options["loop"]:

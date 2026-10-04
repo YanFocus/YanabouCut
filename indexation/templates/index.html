@@ -4,41 +4,122 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YanabouCut - Recherche Pixabay</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: linear-gradient(180deg, #eef2ff 0%, #f8fafc 240px);
+            color: #1f2937; min-height: 100vh; padding: 16px 12px 40px;
+        }
+        .wrap { max-width: 960px; margin: 0 auto; }
+        header.hero {
+            text-align: center; padding: 28px 16px; margin-bottom: 18px;
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: #fff; border-radius: 18px;
+            box-shadow: 0 10px 24px rgba(79, 70, 229, .35);
+        }
+        header.hero h1 { font-size: 2rem; font-weight: 800; letter-spacing: .5px; }
+        header.hero p { margin-top: 8px; font-size: .85rem; opacity: .92; line-height: 1.5; }
+        .card {
+            background: #fff; border-radius: 16px; padding: 18px;
+            margin-bottom: 16px; box-shadow: 0 4px 14px rgba(15, 23, 42, .08);
+            border: 1px solid #eef0f6;
+        }
+        .card h2 { font-size: 1.15rem; margin-bottom: 10px; color: #111827; }
+        .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
+        .stats { font-size: .92rem; color: #4b5563; line-height: 1.7; }
+        .stats strong.bl { color: #4f46e5; } .stats strong.gr { color: #16a34a; }
+        .pill {
+            display: inline-block; font-size: .78rem; font-weight: 700;
+            padding: 4px 12px; border-radius: 999px; margin-top: 8px;
+        }
+        .pill.run { background: #ffedd5; color: #c2410c; }
+        .pill.idle { background: #f1f5f9; color: #64748b; }
+        .btn {
+            display: block; width: 100%; min-height: 48px; border: 0; border-radius: 12px;
+            font-size: 1rem; font-weight: 700; cursor: pointer; text-align: center;
+            padding: 13px 18px; text-decoration: none; transition: transform .05s, filter .15s;
+        }
+        .btn:active { transform: scale(.98); }
+        .btn.indigo { background: #4f46e5; color: #fff; }
+        .btn.indigo:hover { filter: brightness(1.08); }
+        .btn.green { background: #16a34a; color: #fff; }
+        .btn.green:hover { filter: brightness(1.08); }
+        .btn.blue { background: #2563eb; color: #fff; }
+        .btn.grey { background: #e2e8f0; color: #64748b; }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn-row .btn { flex: 1 1 200px; width: auto; }
+        input[type=file] {
+            display: block; width: 100%; font-size: .9rem; color: #4b5563;
+            border: 2px dashed #c7d2fe; border-radius: 12px; padding: 14px;
+            background: #eef2ff; margin: 10px 0 14px;
+        }
+        label.lbl { font-size: .85rem; font-weight: 600; color: #374151; }
+        code.blk {
+            display: block; background: #f1f5f9; border-radius: 8px; padding: 8px 10px;
+            font-size: .78rem; color: #334155; margin-top: 6px; word-break: break-all;
+        }
+        .msg { border-radius: 12px; padding: 12px 14px; font-size: .88rem; margin-top: 14px; }
+        .msg.ok { background: #dcfce7; color: #166534; }
+        .msg.err { background: #fee2e2; color: #b91c1c; }
+        ul.list { list-style: none; font-size: .85rem; color: #4b5563; }
+        ul.list li { padding: 7px 2px; border-bottom: 1px solid #f1f5f9; }
+        ul.list li:last-child { border-bottom: 0; }
+        ul.list strong { color: #1f2937; }
+        .small { font-size: .78rem; color: #6b7280; }
+        .danger { color: #b91c1c; font-weight: 700; }
+        .ok-t { color: #166534; font-weight: 700; }
+        #logs {
+            background: #0b1220; color: #4ade80; font-family: ui-monospace, Menlo, Consolas, monospace;
+            font-size: .75rem; border-radius: 12px; padding: 14px;
+            max-height: 320px; overflow-y: auto; line-height: 1.65;
+        }
+        #logs .t { color: #64748b; }
+        .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px; flex-wrap: wrap; }
+        .btn.small-btn { width: auto; min-height: 40px; padding: 8px 16px; font-size: .85rem; }
+        footer.sp { text-align: center; color: #9ca3af; font-size: .75rem; margin-top: 10px; }
+        @media (min-width: 720px) {
+            header.hero h1 { font-size: 2.6rem; }
+            header.hero p { font-size: .95rem; }
+            .card { padding: 24px; }
+            .btn { width: auto; display: inline-block; }
+            form.stack .btn { width: 100%; }
+        }
+    </style>
 </head>
-<body class="bg-gray-50 text-gray-800 font-sans min-h-screen">
-    <div class="max-w-6xl mx-auto px-4 py-10">
-        <header class="text-center mb-8">
-            <h1 class="text-4xl font-extrabold text-indigo-600 mb-2">YanabouCut</h1>
-            <p class="text-gray-600">{% if queue_mode %}Upload JSON &rarr; file d'attente &rarr; 1 recherche par passage &rarr; Pixabay (&lt;13s, 16:9) &rarr; tirage 2-6 &rarr; download video_N &rarr; envoi Drive + suppression &rarr; pause aleatoire 30s-2min entre recherches{% else %}Upload JSON &rarr; Pixabay (&lt;13s, 16:9) &rarr; tirage 2-6 &rarr; download video_N &rarr; pauses aleatoires (2-10s / 30s-2min) &rarr; arret en fin de JSON{% endif %}</p>
+<body>
+    <div class="wrap">
+        <header class="hero">
+            <h1>YanabouCut</h1>
+            <p>{% if queue_mode %}Upload JSON &rarr; file d'attente &rarr; 1 recherche par passage &rarr; Pixabay (&lt;13s, 16:9) &rarr; tirage 2-6 &rarr; download video_N &rarr; envoi Drive + suppression &rarr; pause aleatoire 30s-2min entre recherches{% else %}Upload JSON &rarr; Pixabay (&lt;13s, 16:9) &rarr; tirage 2-6 &rarr; download video_N &rarr; pauses aleatoires (2-10s / 30s-2min) &rarr; arret en fin de JSON{% endif %}</p>
         </header>
 
-        <!-- Etat compteur + download json_du_site.json -->
-        <div class="bg-white shadow-md rounded-lg p-6 mb-6">
-            <div class="flex flex-wrap items-center justify-between gap-4">
+        <!-- Compteur -->
+        <div class="card">
+            <div class="row">
                 <div>
-                    <h2 class="text-xl font-bold">Compteur du site</h2>
-                    <p class="text-sm text-gray-500">Videos enregistrees : <strong class="text-indigo-600">{{ total_videos_downloaded }}</strong>
-                        | Compteur : <strong class="text-indigo-600">{{ current_counter }}</strong>
-                        | Prochaine : <strong class="text-green-600">video_{{ next_video }}</strong></p>
+                    <h2>Compteur du site</h2>
+                    <p class="stats">Videos : <strong class="bl">{{ total_videos_downloaded }}</strong>
+                        | Compteur : <strong class="bl">{{ current_counter }}</strong>
+                        | Prochaine : <strong class="gr">video_{{ next_video }}</strong></p>
                     {% if job_running %}
-                        <p class="mt-1 text-sm font-semibold text-orange-600">Traitement EN COURS{% if job.current_search %} : {{ job.current_search }}{% endif %}</p>
+                        <span class="pill run">Traitement EN COURS{% if job.current_search %} : {{ job.current_search }}{% endif %}</span>
                     {% else %}
-                        <p class="mt-1 text-sm text-gray-500">Aucun traitement en cours.</p>
+                        <span class="pill idle">Aucun traitement en cours</span>
                     {% endif %}
                 </div>
                 <div>
                     {% if json_available %}
-                        <a href="{% url 'download-json' %}" class="inline-block bg-green-600 text-white font-semibold py-2 px-5 rounded-md hover:bg-green-700">Telecharger json_du_site.json</a>
+                        <a href="{% url 'download-json' %}" class="btn green">Telecharger json_du_site.json</a>
                     {% else %}
-                        <span class="inline-block bg-gray-200 text-gray-500 font-semibold py-2 px-5 rounded-md">json_du_site.json : pas encore cree</span>
+                        <span class="btn grey">json_du_site.json : pas encore cree</span>
                     {% endif %}
                 </div>
             </div>
             {% if last_videos %}
-            <div class="mt-4 border-t pt-3">
-                <p class="text-sm font-semibold mb-1">Dernieres videos (compteur persistant) :</p>
-                <ul class="text-sm text-gray-600 space-y-1">
+            <div style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:10px;">
+                <p class="small" style="font-weight:700;margin-bottom:4px;">Dernieres videos :</p>
+                <ul class="list">
                     {% for v in last_videos %}
                     <li><strong>{{ v.nouveau_nom }}</strong> | ID {{ v.identifiant_unique }} | tags : {{ v.tags|truncatechars:80 }}</li>
                     {% endfor %}
@@ -47,20 +128,20 @@
             {% endif %}
         </div>
 
-        <!-- Etat Google Drive -->
-        <div class="bg-white shadow-md rounded-lg p-6 mb-6">
-            <div class="flex flex-wrap items-center justify-between gap-4">
+        <!-- Google Drive -->
+        <div class="card">
+            <div class="row">
                 <div>
-                    <h2 class="text-xl font-bold">Google Drive</h2>
+                    <h2>Google Drive</h2>
                     {% if drive_state.blocked %}
-                        <p class="mt-1 text-sm font-semibold text-red-600">ENVOI DRIVE BLOQUE — chargement des nouveaux JSON bloque.</p>
-                        <p class="text-xs text-gray-500">{{ drive_state.reason }} Liberez de l'espace / corrigez puis reessayez.</p>
+                        <p class="danger">ENVOI DRIVE BLOQUE — nouveaux JSON bloques.</p>
+                        <p class="small">{{ drive_state.reason }}</p>
                     {% else %}
-                        <p class="mt-1 text-sm text-green-700">Envois actifs (priorite compte 1, puis 2, 3, 4 si pleins).</p>
+                        <p class="ok-t">Envois actifs (priorite compte 1, puis 2, 3, 4 si pleins).</p>
                     {% endif %}
                     {% if pending_videos %}
-                        <p class="text-sm text-gray-600 mt-1">Videos en attente sur le site ({{ pending_videos|length }}) :</p>
-                        <ul class="text-xs text-gray-500 list-disc list-inside">
+                        <p class="small" style="margin-top:8px;">En attente sur le site ({{ pending_videos|length }}) :</p>
+                        <ul class="list">
                             {% for v in pending_videos %}
                             <li>{{ v }}</li>
                             {% endfor %}
@@ -70,77 +151,77 @@
                 <div>
                     <form method="POST" action="{% url 'retry-drive' %}">
                         {% csrf_token %}
-                        <button type="submit" class="inline-block bg-blue-600 text-white font-semibold py-2 px-5 rounded-md hover:bg-blue-700">Reessayer l'envoi Drive</button>
+                        <button type="submit" class="btn blue">Reessayer l'envoi Drive</button>
                     </form>
                 </div>
             </div>
         </div>
 
         <!-- Upload -->
-        <div class="bg-white shadow-md rounded-lg p-6 max-w-xl mx-auto mb-6">
-            <form method="POST" enctype="multipart/form-data" class="space-y-4">
+        <div class="card">
+            <h2>Fichier de recherches</h2>
+            <form method="POST" enctype="multipart/form-data" class="stack">
                 {% csrf_token %}
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Fichier JSON : {"recherche1": "dog in house", ...}</label>
-                    <input type="file" name="json_file" accept=".json,application/json" required
-                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
-                </div>
-                <button type="submit" class="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-indigo-700">
-                    {% if queue_mode %}Mettre en file d'attente{% else %}Lancer les recherches{% endif %}
-                </button>
+                <label class="lbl" for="json_file">JSON : {"recherche1": "dog in house", ...}</label>
+                <input id="json_file" type="file" name="json_file" accept=".json,application/json" required>
+                <button type="submit" class="btn indigo">{% if queue_mode %}Mettre en file d'attente{% else %}Lancer les recherches{% endif %}</button>
             </form>
             {% if messages %}
                 {% for m in messages %}
                     {% if m.tags == 'success' %}
-                    <div class="mt-4 p-3 bg-green-100 text-green-800 rounded-md text-sm">{{ m }}</div>
+                    <div class="msg ok">{{ m }}</div>
                     {% else %}
-                    <div class="mt-4 p-3 bg-red-100 text-red-700 rounded-md text-sm">{{ m }}</div>
+                    <div class="msg err">{{ m }}</div>
                     {% endif %}
                 {% endfor %}
             {% endif %}
         </div>
 
-        <!-- File d'attente (mode heberge) -->
+        <!-- File d'attente -->
         {% if queue_mode %}
-        <div class="bg-white shadow-md rounded-lg p-6 mb-6">
-            <h2 class="text-xl font-bold mb-2">File d'attente</h2>
-            <p class="text-xs text-gray-500 mb-3">La tache planifiee traite UNE recherche par passage. Uploadez vos JSON, ils seront traites un par un.</p>
+        <div class="card">
+            <h2>File d'attente</h2>
+            <p class="small" style="margin-bottom:10px;">La tache planifiee traite UNE recherche par passage. Ou lancez vous-meme ci-dessous.</p>
             {% if queued_files %}
-                <ul class="text-sm text-gray-600 space-y-1">
+                <ul class="list">
                     {% for q in queued_files %}
                     <li>{{ q.name }} : {{ q.done }}/{{ q.total }} recherche(s) traitee(s)</li>
                     {% endfor %}
                 </ul>
             {% else %}
-                <p class="text-sm text-gray-400 italic">File vide.</p>
+                <p class="small" style="font-style:italic;">File vide.</p>
             {% endif %}
+            <form method="POST" action="{% url 'run-queue' %}" class="stack" style="margin-top:12px;">
+                {% csrf_token %}
+                <button type="submit" class="btn indigo">Lancer le traitement (1 recherche)</button>
+            </form>
         </div>
         {% endif %}
 
-        <!-- Journal processus en cours -->
-        <div class="bg-white shadow-md rounded-lg p-6">
-            <div class="flex items-center justify-between mb-3">
-                <h2 class="text-xl font-bold">Journal du processus (temps reel)</h2>
-                <button onclick="location.reload()" class="text-sm bg-gray-200 px-3 py-1 rounded hover:bg-gray-300">Rafraichir</button>
+        <!-- Journal -->
+        <div class="card">
+            <div class="topbar">
+                <h2 style="margin:0;">Journal (temps reel)</h2>
+                <button onclick="location.reload()" class="btn grey small-btn">Rafraichir</button>
             </div>
-            <p class="text-xs text-gray-500 mb-3">Etapes dans l'ordre (haut &rarr; bas) : lancement recherche, tirage 2-6, appel Pixabay, filtrage, doublon ID, telechargement video_N, envoi Drive + suppression (obligatoires avant la video suivante), pauses aleatoires, erreurs.</p>
+            <p class="small" style="margin-bottom:10px;">Haut &rarr; bas : lancement, tirage 2-6, Pixabay, filtrage, doublons, telechargement, envoi Drive + suppression, pauses, erreurs.</p>
             {% if job_logs %}
-                <div id="logs" class="bg-black text-green-300 font-mono text-xs rounded p-4 max-h-96 overflow-y-auto space-y-1">
+                <div id="logs">
                     {% for log in job_logs %}
-                        <div><span class="text-gray-400">[{{ log.time }}]</span> {{ log.message }}</div>
+                        <div><span class="t">[{{ log.time }}]</span> {{ log.message }}</div>
                     {% endfor %}
                 </div>
             {% else %}
-                <p class="text-sm text-gray-400 italic">Aucun log pour le moment. Lancez un traitement pour voir chaque etape ici.</p>
+                <p class="small" style="font-style:italic;">Aucun log. Uploadez un JSON pour voir chaque etape ici.</p>
             {% endif %}
         </div>
+
+        <footer class="sp">YanabouCut — pipeline Pixabay &rarr; Drive</footer>
     </div>
 <script>
-// Auto-refresh du journal toutes les 5s pendant un traitement en cours
 {% if job_running %}
 setTimeout(function(){ location.reload(); }, 5000);
 {% endif %}
-// Affiche toujours le bas du journal (derniere etape en cours)
 var logBox = document.getElementById('logs');
 if (logBox) { logBox.scrollTop = logBox.scrollHeight; }
 </script>
