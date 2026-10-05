@@ -225,7 +225,7 @@ def run_job(searches, wait_seconds=None):
         _job_state["current_search"] = None
     _persist_status()
 
-    _push_log(f"Demarrage : {len(searches)} recherche(s) a traiter.")
+    _push_log(f"Je demarre : {len(searches)} recherche(s) a traiter.")
 
     site_json, videos_dir, _ = get_paths()
     keys = list(searches.keys())
@@ -238,25 +238,25 @@ def run_job(searches, wait_seconds=None):
         _persist_status()
 
         target = random.randint(2, 6)
-        _push_log(f"[{key}] Recherche : \"{query}\" - objectif {target} video(s).")
+        _push_log(f"[{key}] Je lance la recherche \"{query}\" (objectif : {target} videos).")
 
         # 1. Appel API
         try:
             hits = pixabay_search(query, api_key)
-            _push_log(f"[{key}] Pixabay : {len(hits)} resultat(s).")
+            _push_log(f"[{key}] Je cherche sur Pixabay : {len(hits)} resultats.")
         except Exception as e:
             _push_log(f"[{key}] ERREUR Pixabay : {e}", level="error")
             continue
 
         # 2. Filtrage <13s + 16:9
         filtered = filter_hits(hits)
-        _push_log(f"[{key}] Filtres (<13s, 16:9) : {len(filtered)} video(s) gardee(s).")
+        _push_log(f"[{key}] Je garde {len(filtered)} video(s) apres filtres (<13s, 16:9).")
         if not filtered:
             _push_log(f"[{key}] Aucune video valable : recherche suivante.")
             if idx < len(keys) - 1:
                 pause_search = wait_seconds if wait_seconds is not None else random.randint(10, 180)
                 if pause_search > 0:
-                    _push_log(f"[{key}] Pause {pause_search}s avant {keys[idx+1]}.")
+                    _push_log(f"[{key}] J'attends {pause_search}s avant {keys[idx+1]}.")
                     time.sleep(pause_search)
             continue
 
@@ -270,14 +270,14 @@ def run_job(searches, wait_seconds=None):
                 break
             uid = str(cand.get("id"))
             if uid in existing_ids:
-                _push_log(f"[{key}] ID {uid} deja enregistre : suivante.")
+                _push_log(f"[{key}] ID {uid} deja traite : je passe a la suivante.")
                 continue
             # Nouveau nom via compteur persistant
             new_counter = int(state.get("counter", 0)) + 1
             new_name = f"video_{new_counter}"
             dest = videos_dir / f"{new_name}.mp4"
             video_url = cand.get("url") or ""
-            _push_log(f"[{key}] Telechargement {downloaded_this_search+1}/{target} : ID {uid} -> {new_name}.mp4")
+            _push_log(f"[{key}] Je telecharge la video {downloaded_this_search+1}/{target} (ID {uid}) sous {new_name}.mp4")
             try:
                 download_video(video_url, dest)
             except Exception as e:
@@ -309,7 +309,7 @@ def run_job(searches, wait_seconds=None):
                 continue
             existing_ids.add(uid)
             downloaded_this_search += 1
-            _push_log(f"[{key}] OK {new_name}.mp4 (ID {uid}) - compteur {new_counter}.")
+            _push_log(f"[{key}] {new_name}.mp4 enregistre (ID {uid}). Compteur : {new_counter}.")
 
             # 4. Envoi Google Drive OBLIGATOIRE : la video suivante n'est traitee
             # que si celle-ci est uploadee ET supprimee du site.
@@ -319,7 +319,7 @@ def run_job(searches, wait_seconds=None):
             drive_name = f"{new_name}.mp4"
             uploaded_ok = False
             for attempt in range(1, 4):
-                _push_log(f"[{key}] Envoi {drive_name} vers Drive (essai {attempt}/3).")
+                _push_log(f"[{key}] J'envoie {drive_name} vers Drive (essai {attempt}/3).")
                 try:
                     account_used, drive_result = send_to_drive(dest, drive_name, lambda m: _push_log(f"[{key}] {m}"))
                 except Exception as e:
@@ -338,7 +338,7 @@ def run_job(searches, wait_seconds=None):
                     _push_log(f"[{key}] {new_name}.mp4 garde en local ({reason}). ARRET + JSON bloques.", level="error")
                     stop_requested = True
                     break
-                _push_log(f"[{key}] Echec envoi ({drive_result}) : nouvel essai meme video.", level="error")
+                _push_log(f"[{key}] Echec envoi ({drive_result}) : je reessaie la meme video.", level="error")
                 time.sleep(10)
             if stop_requested:
                 break
@@ -370,20 +370,20 @@ def run_job(searches, wait_seconds=None):
                 _push_log(f"[{key}] Sur Drive mais suppression locale impossible. ARRET anti-doublon.", level="error")
                 stop_requested = True
                 break
-            _push_log(f"[{key}] {drive_name} sur Drive (compte {account_used}), supprime du site.")
+            _push_log(f"[{key}] Envoyee sur Drive (compte {account_used}) et supprimee du site.")
 
             if downloaded_this_search < target:
                 pause_video = random.randint(2, 10)
-                _push_log(f"[{key}] Pause {pause_video}s.")
+                _push_log(f"[{key}] J'attends {pause_video}s avant la video suivante.")
                 time.sleep(pause_video)
 
         if stop_requested:
             break
-        _push_log(f"[{key}] Fini : {downloaded_this_search}/{target} video(s).")
+        _push_log(f"[{key}] Recherche {key} finie : {downloaded_this_search}/{target} video(s).")
         if idx < len(keys) - 1:
             pause_search = wait_seconds if wait_seconds is not None else random.randint(10, 180)
             if pause_search > 0:
-                _push_log(f"Pause {pause_search}s ({pause_search // 60} min {pause_search % 60}s) avant {keys[idx+1]}.")
+                _push_log(f"J'attends {pause_search}s ({pause_search // 60} min {pause_search % 60}s) avant {keys[idx+1]}.")
                 time.sleep(pause_search)
 
     _push_log("Fini pour toutes les recherches. Rechargez un nouveau JSON pour relancer.")
@@ -437,7 +437,7 @@ def run_all_queued():
             if next_queued_task() is None:
                 break
             pause = random.randint(pause_min, pause_max)
-            _push_log(f"Pause {pause}s avant la suite.")
+            _push_log(f"J'attends {pause}s avant la recherche suivante.")
             time.sleep(pause)
     finally:
         with _job_lock:

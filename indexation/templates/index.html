@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YanabouCut - Recherche Pixabay</title>
+    <title>YanabouCut</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -14,12 +14,11 @@
         .wrap { max-width: 960px; margin: 0 auto; }
         header.hero {
             text-align: center; padding: 28px 16px; margin-bottom: 18px;
-            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            background: linear-gradient(135deg, #4f46e5, #7c3ed6);
             color: #fff; border-radius: 18px;
             box-shadow: 0 10px 24px rgba(79, 70, 229, .35);
         }
         header.hero h1 { font-size: 2rem; font-weight: 800; letter-spacing: .5px; }
-        header.hero p { margin-top: 8px; font-size: .85rem; opacity: .92; line-height: 1.5; }
         .card {
             background: #fff; border-radius: 16px; padding: 18px;
             margin-bottom: 16px; box-shadow: 0 4px 14px rgba(15, 23, 42, .08);
@@ -29,36 +28,25 @@
         .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
         .stats { font-size: .92rem; color: #4b5563; line-height: 1.7; }
         .stats strong.bl { color: #4f46e5; } .stats strong.gr { color: #16a34a; }
-        .pill {
-            display: inline-block; font-size: .78rem; font-weight: 700;
-            padding: 4px 12px; border-radius: 999px; margin-top: 8px;
-        }
+        .pill { display: inline-block; font-size: .78rem; font-weight: 700; padding: 4px 12px; border-radius: 999px; margin-top: 8px; }
         .pill.run { background: #ffedd5; color: #c2410c; }
         .pill.idle { background: #f1f5f9; color: #64748b; }
+        .pill.block { background: #fee2e2; color: #b91c1c; }
         .btn {
             display: block; width: 100%; min-height: 48px; border: 0; border-radius: 12px;
             font-size: 1rem; font-weight: 700; cursor: pointer; text-align: center;
-            padding: 13px 18px; text-decoration: none; transition: transform .05s, filter .15s;
+            padding: 13px 18px; text-decoration: none;
         }
-        .btn:active { transform: scale(.98); }
         .btn.indigo { background: #4f46e5; color: #fff; }
-        .btn.indigo:hover { filter: brightness(1.08); }
         .btn.green { background: #16a34a; color: #fff; }
-        .btn.green:hover { filter: brightness(1.08); }
-        .btn.blue { background: #2563eb; color: #fff; }
+        .btn.dark { background: #111827; color: #fff; }
         .btn.grey { background: #e2e8f0; color: #64748b; }
-        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
-        .btn-row .btn { flex: 1 1 200px; width: auto; }
         input[type=file] {
             display: block; width: 100%; font-size: .9rem; color: #4b5563;
             border: 2px dashed #c7d2fe; border-radius: 12px; padding: 14px;
             background: #eef2ff; margin: 10px 0 14px;
         }
         label.lbl { font-size: .85rem; font-weight: 600; color: #374151; }
-        code.blk {
-            display: block; background: #f1f5f9; border-radius: 8px; padding: 8px 10px;
-            font-size: .78rem; color: #334155; margin-top: 6px; word-break: break-all;
-        }
         .msg { border-radius: 12px; padding: 12px 14px; font-size: .88rem; margin-top: 14px; }
         .msg.ok { background: #dcfce7; color: #166534; }
         .msg.err { background: #fee2e2; color: #b91c1c; }
@@ -67,8 +55,6 @@
         ul.list li:last-child { border-bottom: 0; }
         ul.list strong { color: #1f2937; }
         .small { font-size: .78rem; color: #6b7280; }
-        .danger { color: #b91c1c; font-weight: 700; }
-        .ok-t { color: #166534; font-weight: 700; }
         #logs {
             background: #0b1220; color: #4ade80; font-family: ui-monospace, Menlo, Consolas, monospace;
             font-size: .75rem; border-radius: 12px; padding: 14px;
@@ -80,7 +66,6 @@
         footer.sp { text-align: center; color: #9ca3af; font-size: .75rem; margin-top: 10px; }
         @media (min-width: 720px) {
             header.hero h1 { font-size: 2.6rem; }
-            header.hero p { font-size: .95rem; }
             .card { padding: 24px; }
             .btn { width: auto; display: inline-block; }
             form.stack .btn { width: 100%; }
@@ -91,10 +76,8 @@
     <div class="wrap">
         <header class="hero">
             <h1>YanabouCut</h1>
-            <p>{% if queue_mode %}Upload JSON &rarr; file d'attente &rarr; 1 recherche par passage &rarr; Pixabay (&lt;13s, 16:9) &rarr; tirage 2-6 &rarr; download video_N &rarr; envoi Drive + suppression &rarr; pause aleatoire 10s-3min entre recherches{% else %}Upload JSON &rarr; Pixabay (&lt;13s, 16:9) &rarr; tirage 2-6 &rarr; download video_N &rarr; pauses aleatoires (2-10s / 10s-3min) &rarr; arret en fin de JSON{% endif %}</p>
         </header>
 
-        <!-- Compteur -->
         <div class="card">
             <div class="row">
                 <div>
@@ -102,7 +85,9 @@
                     <p class="stats">Videos : <strong class="bl">{{ total_videos_downloaded }}</strong>
                         | Compteur : <strong class="bl">{{ current_counter }}</strong>
                         | Prochaine : <strong class="gr">video_{{ next_video }}</strong></p>
-                    {% if job_running %}
+                    {% if drive_state.blocked %}
+                        <span class="pill block">BLOQUE : {{ drive_state.reason }}</span>
+                    {% elif job_running %}
                         <span class="pill run">Traitement EN COURS{% if job.current_search %} : {{ job.current_search }}{% endif %}</span>
                     {% else %}
                         <span class="pill idle">Aucun traitement en cours</span>
@@ -116,55 +101,15 @@
                     {% endif %}
                 </div>
             </div>
-            {% if last_videos %}
-            <div style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:10px;">
-                <p class="small" style="font-weight:700;margin-bottom:4px;">Dernieres videos :</p>
-                <ul class="list">
-                    {% for v in last_videos %}
-                    <li><strong>{{ v.nouveau_nom }}</strong> | ID {{ v.identifiant_unique }} | tags : {{ v.tags|truncatechars:80 }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endif %}
         </div>
 
-        <!-- Google Drive -->
         <div class="card">
-            <div class="row">
-                <div>
-                    <h2>Google Drive</h2>
-                    {% if drive_state.blocked %}
-                        <p class="danger">ENVOI DRIVE BLOQUE — nouveaux JSON bloques.</p>
-                        <p class="small">{{ drive_state.reason }}</p>
-                    {% else %}
-                        <p class="ok-t">Envois actifs (priorite compte 1, puis 2, 3, 4 si pleins).</p>
-                    {% endif %}
-                    {% if pending_videos %}
-                        <p class="small" style="margin-top:8px;">En attente sur le site ({{ pending_videos|length }}) :</p>
-                        <ul class="list">
-                            {% for v in pending_videos %}
-                            <li>{{ v }}</li>
-                            {% endfor %}
-                        </ul>
-                    {% endif %}
-                </div>
-                <div>
-                    <form method="POST" action="{% url 'retry-drive' %}">
-                        {% csrf_token %}
-                        <button type="submit" class="btn blue">Reessayer l'envoi Drive</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <!-- Upload -->
-        <div class="card">
-            <h2>Fichier de recherches</h2>
+            <h2>Charger un JSON</h2>
             <form method="POST" enctype="multipart/form-data" class="stack">
                 {% csrf_token %}
-                <label class="lbl" for="json_file">JSON : {"recherche1": "dog in house", ...}</label>
+                <label class="lbl" for="json_file">Fichier JSON de recherches</label>
                 <input id="json_file" type="file" name="json_file" accept=".json,application/json" required>
-                <button type="submit" class="btn indigo">{% if queue_mode %}Mettre en file d'attente{% else %}Lancer les recherches{% endif %}</button>
+                <button type="submit" class="btn indigo">Lancer le traitement</button>
             </form>
             {% if messages %}
                 {% for m in messages %}
@@ -175,13 +120,21 @@
                     {% endif %}
                 {% endfor %}
             {% endif %}
+            {% if current_searches %}
+            <div style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:10px;">
+                <p class="small" style="font-weight:700;margin-bottom:4px;">JSON en cours :</p>
+                <ul class="list">
+                    {% for k, v in current_searches %}
+                    <li><strong>{{ k }}</strong> : "{{ v }}"</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
         </div>
 
-        <!-- File d'attente -->
         {% if queue_mode %}
         <div class="card">
             <h2>File d'attente</h2>
-            <p class="small" style="margin-bottom:10px;">Le bouton ci-dessous lance toutes les recherches a la suite (pause 10s-3min entre elles). La tache planifiee, elle, traite UNE recherche par passage.</p>
             {% if queued_files %}
                 <ul class="list">
                     {% for q in queued_files %}
@@ -198,13 +151,14 @@
         </div>
         {% endif %}
 
-        <!-- Journal -->
         <div class="card">
             <div class="topbar">
-                <h2 style="margin:0;">Journal (temps reel)</h2>
-                <button onclick="location.reload()" class="btn grey small-btn">Rafraichir</button>
+                <h2 style="margin:0;">Journal</h2>
+                <div>
+                    <a href="{% url 'videos' %}" class="btn dark small-btn">Voir les videos</a>
+                    <button onclick="location.reload()" class="btn grey small-btn">Rafraichir</button>
+                </div>
             </div>
-            <p class="small" style="margin-bottom:10px;">Haut &rarr; bas : lancement, tirage 2-6, Pixabay, filtrage, doublons, telechargement, envoi Drive + suppression, pauses, erreurs.</p>
             {% if job_logs %}
                 <div id="logs">
                     {% for log in job_logs %}
@@ -212,18 +166,16 @@
                     {% endfor %}
                 </div>
             {% else %}
-                <p class="small" style="font-style:italic;">Aucun log. Uploadez un JSON pour voir chaque etape ici.</p>
+                <p class="small" style="font-style:italic;">Aucun log pour le moment.</p>
             {% endif %}
         </div>
 
-        <footer class="sp">YanabouCut — pipeline Pixabay &rarr; Drive</footer>
+        <footer class="sp">YanabouCut</footer>
     </div>
 <script>
 {% if job_running %}
 setTimeout(function(){ location.reload(); }, 5000);
 {% endif %}
-var logBox = document.getElementById('logs');
-if (logBox) { logBox.scrollTop = logBox.scrollHeight; }
 </script>
 </body>
 </html>

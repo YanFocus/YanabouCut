@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YanabouCut - Videos</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: linear-gradient(180deg, #eef2ff 0%, #f8fafc 240px);
+            color: #1f2937; min-height: 100vh; padding: 16px 12px 40px;
+        }
+        .wrap { max-width: 960px; margin: 0 auto; }
+        header.hero {
+            text-align: center; padding: 22px 16px; margin-bottom: 18px;
+            background: linear-gradient(135deg, #4f46e5, #7c3ed6);
+            color: #fff; border-radius: 18px;
+            box-shadow: 0 10px 24px rgba(79, 70, 229, .35);
+        }
+        header.hero h1 { font-size: 1.7rem; font-weight: 800; }
+        .card {
+            background: #fff; border-radius: 16px; padding: 18px;
+            margin-bottom: 16px; box-shadow: 0 4px 14px rgba(15, 23, 42, .08);
+            border: 1px solid #eef0f6;
+        }
+        .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+        .tab {
+            flex: 1 1 100px; text-align: center; padding: 12px 8px; border-radius: 12px;
+            font-weight: 700; font-size: .9rem; text-decoration: none;
+            background: #eef2ff; color: #4f46e5;
+        }
+        .tab.active { background: #4f46e5; color: #fff; }
+        .tab small { display: block; font-weight: 400; font-size: .7rem; opacity: .85; word-break: break-all; }
+        .btn {
+            display: inline-block; min-height: 44px; border: 0; border-radius: 12px;
+            font-size: .9rem; font-weight: 700; cursor: pointer; text-align: center;
+            padding: 11px 16px; text-decoration: none;
+        }
+        .btn.indigo { background: #4f46e5; color: #fff; }
+        .btn.red { background: #dc2626; color: #fff; }
+        .btn.grey { background: #e2e8f0; color: #475569; }
+        .btn.small-btn { min-height: 38px; padding: 8px 14px; font-size: .8rem; }
+        .msg { border-radius: 12px; padding: 12px 14px; font-size: .88rem; margin-bottom: 14px; }
+        .msg.ok { background: #dcfce7; color: #166534; }
+        .msg.err { background: #fee2e2; color: #b91c1c; }
+        .vrow {
+            display: flex; gap: 10px; align-items: center;
+            padding: 10px 4px; border-bottom: 1px solid #f1f5f9;
+        }
+        .vrow:last-child { border-bottom: 0; }
+        .vrow input[type=checkbox] { width: 22px; height: 22px; flex-shrink: 0; }
+        .vinfo { flex: 1; min-width: 0; }
+        .vinfo .nm { font-weight: 700; font-size: .88rem; word-break: break-all; }
+        .vinfo .mt { font-size: .75rem; color: #6b7280; }
+        .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+        .small { font-size: .78rem; color: #6b7280; }
+        .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+        .toolbar a { color: #4f46e5; font-weight: 700; text-decoration: none; font-size: .9rem; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header class="hero">
+            <h1>YanabouCut - Videos</h1>
+        </header>
+
+        <div class="toolbar">
+            <a href="{% url 'home' %}">&larr; Accueil</a>
+        </div>
+
+        {% if messages %}
+            {% for m in messages %}
+                {% if m.tags == 'success' %}
+                <div class="msg ok">{{ m }}</div>
+                {% else %}
+                <div class="msg err">{{ m }}</div>
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+
+        <div class="card">
+            <div class="tabs">
+                {% for a in accounts %}
+                <a href="{% url 'videos_account' account=a.account %}" class="tab {% if a.account == current_account %}active{% endif %}">
+                    Compte {{ a.account }}
+                    <small>{{ current_email|default:a.email }}</small>
+                </a>
+                {% endfor %}
+            </div>
+            {% if quota_txt %}
+            <p class="small">Compte {{ current_account }}{% if current_email %} ({{ current_email }}){% endif %} : {{ quota_txt }} — {{ videos|length }} video(s).</p>
+            {% endif %}
+            {% if error_message %}
+                <div class="msg err">{{ error_message }}</div>
+            {% endif %}
+        </div>
+
+        {% if videos %}
+        <div class="card">
+            <form method="POST" action="{% url 'videos-delete' account=current_account %}" id="bulk-form">
+                {% csrf_token %}
+                <div class="actions">
+                    <label class="small"><input type="checkbox" id="check-all" style="width:18px;height:18px;vertical-align:middle;"> Toutes</label>
+                    <button type="button" class="btn indigo small-btn" onclick="downloadSelected()">Telecharger la selection</button>
+                    <button type="submit" class="btn red small-btn" onclick="return confirm('Mettre a la corbeille les videos selectionnees ?')">Supprimer la selection</button>
+                </div>
+                {% for v in videos %}
+                <div class="vrow">
+                    <input type="checkbox" name="file_ids" value="{{ v.id }}" data-url="{{ v.download_url }}" data-name="{{ v.name }}">
+                    <div class="vinfo">
+                        <div class="nm">{{ v.name }}</div>
+                        <div class="mt">{{ v.size_mo }} Mo | {{ v.date }}</div>
+                    </div>
+                    <a href="{{ v.download_url %}" class="btn grey small-btn" download>Telecharger</a>
+                </div>
+                {% endfor %}
+            </form>
+        </div>
+        {% elif not error_message %}
+        <div class="card"><p class="small" style="font-style:italic;">Aucune video sur ce compte.</p></div>
+        {% endif %}
+    </div>
+<script>
+document.getElementById('check-all').addEventListener('change', function() {
+    var boxes = document.querySelectorAll('input[name="file_ids"]');
+    for (var i = 0; i < boxes.length; i++) { boxes[i].checked = this.checked; }
+});
+function downloadSelected() {
+    var boxes = document.querySelectorAll('input[name="file_ids"]:checked');
+    if (boxes.length === 0) { alert('Selectionnez au moins une video.'); return; }
+    var i = 0;
+    function next() {
+        if (i >= boxes.length) return;
+        var a = document.createElement('a');
+        a.href = boxes[i].getAttribute('data-url');
+        a.download = boxes[i].getAttribute('data-name');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        i++;
+        setTimeout(next, 1500);
+    }
+    next();
+}
+</script>
+</body>
+</html>

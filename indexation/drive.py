@@ -222,6 +222,32 @@ class DriveAPI:
         files = data.get("files", [])
         return files[0]["id"] if files else None
 
+    def list_files(self, folder_id, page_size=100):
+        """Toutes les videos d'un dossier (liste paginee)."""
+        out = []
+        page_token = None
+        while True:
+            params = {"q": f"'{folder_id}' in parents and trashed=false",
+                      "fields": "files(id,name,size,modifiedTime),nextPageToken",
+                      "orderBy": "modifiedTime desc",
+                      "pageSize": page_size,
+                      "supportsAllDrives": "true"}
+            if page_token:
+                params["pageToken"] = page_token
+            data = self._call("GET", f"{API_BASE}/files", params=params).json()
+            out.extend(data.get("files", []))
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+        return out
+
+    def trash(self, file_id):
+        """Met un fichier a la corbeille (recuperable 30 jours)."""
+        self._call("PATCH", f"{API_BASE}/files/{file_id}",
+                   params={"supportsAllDrives": "true"},
+                   json_body={"trashed": True})
+        return True
+
     def upload(self, folder_id, local_path, drive_name, update_id=None):
         """Envoi avec reprise (resumable). Retourne l'ID du fichier."""
         size = Path(local_path).stat().st_size
@@ -297,7 +323,7 @@ def send_to_drive(local_path, drive_name, log):
         try:
             api = DriveAPI(account)
         except Exception as e:
-            log(f"[Drive] Compte {account} : auth impossible ({str(e)[:120]}) : suivant.")
+            log(f"[Drive] Compte {account} : auth impossible ({str(e)[:120]}) : je passe au suivant.")
             tried += 1
             continue
         try:
@@ -342,6 +368,32 @@ def send_to_drive(local_path, drive_name, log):
     if tried > 0 and quota_blocks == tried:
         return None, "sature"
     return None, "erreur"
+
+
+def flush_pending_videos(log=None):
+    """Envoie toutes les videos gardees en local. Retourne (envoyees, gardees, probleme).
+    Utilise par le bouton Reessayer et par l'auto-deblocage a l'upload."""
+    from django.conf import settings
+    videos_dir = Path(getattr(settings, "VIDEOS_DIR"))
+    pending = sorted(videos_dir.glob("video_*.mp4"), key=lambda p: p.name) if videos_dir.exists() else []
+    sent, kept, problem = 0, 0, ""
+    for local_path in pending:
+        try:
+            account_used, result = send_to_drive(local_path, local_path.name, log or (lambda m: None))
+        except Exception as e:
+            problem = str(e)[:150]
+            kept += 1
+            continue
+        if account_used:
+            try:
+                local_path.unlink()
+                sent += 1
+            except OSError:
+                sent += 1
+        else:
+            problem = str(result)
+            kept += 1
+    return sent, kept, problem
 
 
 def backup_site_json(log=None):
