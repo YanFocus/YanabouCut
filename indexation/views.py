@@ -244,7 +244,7 @@ def videos_page(request, account=1):
                     "name": f.get("name", "?"),
                     "size_mo": round(size / 1024 / 1024, 1),
                     "date": (f.get("modifiedTime", "")[:10]),
-                    "download_url": f"https://drive.google.com/uc?export=download&id={f['id']}",
+                    "download_url": f"https://drive.usercontent.google.com/download?id={f['id']}&export=download&confirm=t",
                 })
             try:
                 q = api.quota()
