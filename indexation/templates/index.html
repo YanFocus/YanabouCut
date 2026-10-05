@@ -99,6 +99,7 @@
                     {% else %}
                         <span class="btn grey">json_du_site.json : pas encore cree</span>
                     {% endif %}
+                    <a href="{% url 'videos' %}" class="btn dark" style="margin-top:10px;">Voir les videos</a>
                 </div>
             </div>
         </div>
@@ -154,10 +155,7 @@
         <div class="card">
             <div class="topbar">
                 <h2 style="margin:0;">Journal</h2>
-                <div>
-                    <a href="{% url 'videos' %}" class="btn dark small-btn">Voir les videos</a>
-                    <button onclick="location.reload()" class="btn grey small-btn">Rafraichir</button>
-                </div>
+                <button onclick="location.reload()" class="btn grey small-btn">Rafraichir</button>
             </div>
             {% if job_logs %}
                 <div id="logs">
