@@ -133,25 +133,6 @@
             {% endif %}
         </div>
 
-        {% if queue_mode %}
-        <div class="card">
-            <h2>File d'attente</h2>
-            {% if queued_files %}
-                <ul class="list">
-                    {% for q in queued_files %}
-                    <li>{{ q.name }} : {{ q.done }}/{{ q.total }} recherche(s) traitee(s)</li>
-                    {% endfor %}
-                </ul>
-            {% else %}
-                <p class="small" style="font-style:italic;">File vide.</p>
-            {% endif %}
-            <form method="POST" action="{% url 'run-queue' %}" class="stack" style="margin-top:12px;">
-                {% csrf_token %}
-                <button type="submit" class="btn indigo">Lancer le traitement (tout le JSON)</button>
-            </form>
-        </div>
-        {% endif %}
-
         <div class="card">
             <div class="topbar">
                 <h2 style="margin:0;">Journal</h2>

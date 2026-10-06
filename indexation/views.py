@@ -71,9 +71,11 @@ def index(request):
                     fname = enqueue_searches(searches)
                     current_json_path().write_text(json.dumps(searches, ensure_ascii=False, indent=2), encoding="utf-8")
                     clear_logs()
-                    messages.success(request, f"{len(searches)} recherche(s) mise(s) en file ({fname}). "
-                                              "Journal reinitialise : il affichera ce JSON. "
-                                              "La tache planifiee les traitera une par une.")
+                    if start_all_queued_async():
+                        messages.success(request, f"{len(searches)} recherche(s) : traitement lance. Suivez le journal.")
+                    else:
+                        messages.success(request, f"{len(searches)} recherche(s) mise(s) en file ({fname}). "
+                                                  "Un traitement est deja en cours : elles seront traitees a la suite.")
                 except Exception as e:
                     messages.error(request, f"Erreur : {e}")
         elif is_running():
