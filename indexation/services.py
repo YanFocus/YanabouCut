@@ -50,12 +50,11 @@ def load_site_json():
                     continue
                 data.setdefault("counter", 0)
                 data.setdefault("videos", [])
-                data.setdefault("doublons", [])
                 return data
             except Exception:
                 logger.exception(f"Lecture {candidate} impossible, essai du backup")
                 continue
-    return {"counter": 0, "videos": [], "doublons": []}
+    return {"counter": 0, "videos": []}
 
 
 def save_site_json(state):
@@ -264,7 +263,6 @@ def run_job(searches, wait_seconds=None):
         # 3. Parcours + dedup + download jusqu'a l'objectif
         state = load_site_json()
         existing_ids = {str(v.get("identifiant_unique")) for v in state.get("videos", [])}
-        doublon_ids = {str(v.get("identifiant_unique")) for v in state.get("doublons", [])}
         downloaded_this_search = 0
 
         for cand in filtered:
@@ -272,18 +270,7 @@ def run_job(searches, wait_seconds=None):
                 break
             uid = str(cand.get("id"))
             if uid in existing_ids:
-                _push_log(f"[{key}] ID {uid} deja traite : je passe a la suivante.")
-                if uid not in doublon_ids:
-                    state.setdefault("doublons", []).append({
-                        "identifiant_unique": uid,
-                        "note": "la video existe deja",
-                        "recherche": key,
-                    })
-                    doublon_ids.add(uid)
-                    try:
-                        save_site_json(state)
-                    except Exception as e:
-                        _push_log(f"[{key}] ERREUR sauvegarde JSON : {e}", level="error")
+                _push_log(f"[{key}] ID {uid} : la video existe deja, je passe a la suivante.")
                 continue
             # Nouveau nom via compteur persistant
             new_counter = int(state.get("counter", 0)) + 1
