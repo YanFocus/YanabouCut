@@ -84,7 +84,7 @@
                 {% for a in accounts %}
                 <a href="{% url 'videos_account' account=a.account %}" class="tab {% if a.account == current_account %}active{% endif %}">
                     Compte {{ a.account }}
-                    <small>{{ current_email|default:a.email }}</small>
+                    <small>{{ a.email }}</small>
                 </a>
                 {% endfor %}
             </div>
