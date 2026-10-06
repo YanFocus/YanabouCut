@@ -18,7 +18,14 @@
             color: #fff; border-radius: 18px;
             box-shadow: 0 10px 24px rgba(79, 70, 229, .35);
         }
-        header.hero h1 { font-size: 2rem; font-weight: 800; letter-spacing: .5px; }
+        header.hero h1 {
+            font-size: 2rem; font-weight: 800; letter-spacing: .5px;
+            background: linear-gradient(90deg, #16a34a 0%, #facc15 50%, #dc2626 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            -webkit-text-fill-color: transparent;
+        }
         .card {
             background: #fff; border-radius: 16px; padding: 18px;
             margin-bottom: 16px; box-shadow: 0 4px 14px rgba(15, 23, 42, .08);
