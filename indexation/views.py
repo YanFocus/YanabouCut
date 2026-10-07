@@ -26,10 +26,6 @@ from indexation.drive import save_state as drive_save_state
 from indexation.drive import send_to_drive
 
 
-def current_json_path():
-    return Path(settings.BASE_DIR) / "current_json.json"
-
-
 def _pending_videos():
     videos_dir = Path(settings.VIDEOS_DIR)
     if not videos_dir.exists():
@@ -72,16 +68,14 @@ def index(request):
                     # Toujours en file + demarrage auto : tout s'enchaine seul,
                     # y compris les JSON deja en attente (pause 1h-2h entre JSON).
                     fname = enqueue_searches(searches)
-                    queued.append((json_file.name, fname, searches))
+                    queued.append((json_file.name, fname, len(searches)))
                 except Exception as e:
                     errors.append(f"{json_file.name} : {e}")
             if queued:
-                # Affiche le premier fichier (traite en premier : le plus ancien)
-                current_json_path().write_text(json.dumps(queued[0][2], ensure_ascii=False, indent=2), encoding="utf-8")
                 clear_logs()
-                total_searches = sum(len(s) for _, _, s in queued)
+                total_searches = sum(n for _, _, n in queued)
                 if start_all_queued_async():
-                    messages.success(request, f"{len(queued)} fichier(s), {total_searches} recherche(s) : traitement lance, tout s'enchaine seul. Suivez le journal.")
+                    messages.success(request, f"{len(queued)} fichier(s), {total_searches} recherche(s) : traitement lance, tout s'enchaine seul.")
                 else:
                     messages.success(request, f"{len(queued)} fichier(s) mis en file ({total_searches} recherches). Prise en charge automatique a la suite.")
             for err in errors:
@@ -113,14 +107,6 @@ def index(request):
             "total": len(searches),
             "done": len([k for k in searches if k in done_keys]),
         })
-    current_searches = []
-    if current_json_path().exists():
-        try:
-            data = json.loads(current_json_path().read_text(encoding="utf-8"))
-            current_searches = list(data.items()) if isinstance(data, dict) else []
-        except Exception:
-            current_searches = []
-
     return render(request, "index.html", {
         "json_available": json_available,
         "current_counter": counter,
@@ -132,7 +118,6 @@ def index(request):
         "pending_videos": [p.name for p in _pending_videos()],
         "queue_mode": queue_mode,
         "queued_files": queued_files,
-        "current_searches": current_searches,
         "progress": queue_overview(),
     })
 

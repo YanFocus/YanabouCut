@@ -675,8 +675,21 @@ def queue_overview():
         if cur_file and f["name"] == cur_file:
             f["current"] = True
     pct = round(done_searches * 100 / total_searches) if total_searches else 0
+    pending_count = sum(1 for f in files if f["done"] < f["total"])
+    if cur["active"] and (cur["file"] or cur["search"] or cur["video"]):
+        parts = [p for p in (cur["file"], cur["search"], cur["video"]) if p]
+        status_line = "En cours : " + " → ".join(parts)
+        if cur["target"]:
+            status_line += f" ({cur['done']}/{cur['target']} videos)"
+    elif pending_count:
+        status_line = f"{pending_count} JSON en attente de traitement."
+    elif total_searches:
+        status_line = "Tout est termine."
+    else:
+        status_line = "En attente."
     return {"files": files, "done_searches": done_searches,
-            "total_searches": total_searches, "pct": pct, "current": cur}
+            "total_searches": total_searches, "pct": pct, "current": cur,
+            "pending_count": pending_count, "status_line": status_line}
 
 
 def _current_state():

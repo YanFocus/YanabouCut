@@ -130,16 +130,6 @@
                     {% endif %}
                 {% endfor %}
             {% endif %}
-            {% if current_searches %}
-            <div style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:10px;">
-                <p class="small" style="font-weight:700;margin-bottom:4px;">JSON en cours :</p>
-                <ul class="list">
-                    {% for k, v in current_searches %}
-                    <li><strong>{{ k }}</strong> : "{{ v }}"</li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endif %}
         </div>
 
         <div class="card">
@@ -152,25 +142,18 @@
                 <span class="small" id="prog-counts">{{ progress.done_searches }} / {{ progress.total_searches }} recherches</span>
             </div>
             <div class="bigbar"><div class="bigfill" id="prog-bar" style="width:{{ progress.pct }}%;"></div></div>
-            <div class="currentbox" id="prog-current">
-                {% if progress.current.active and progress.current.file %}
-                    En cours : {{ progress.current.file }}{% if progress.current.search %} &rarr; {{ progress.current.search }}{% endif %}{% if progress.current.video %} &rarr; {{ progress.current.video }}{% endif %}{% if progress.current.target %} ({{ progress.current.done }}/{{ progress.current.target }} videos){% endif %}
-                {% elif progress.total_searches and progress.done_searches >= progress.total_searches %}
-                    Tout est termine.
-                {% else %}
-                    En attente.
-                {% endif %}
-            </div>
-            <div id="prog-files">
+            <div class="currentbox" id="prog-current">{{ progress.status_line }}</div>
+            <details id="prog-details">
+                <summary class="small" id="prog-summary" style="cursor:pointer;font-weight:700;">File d'attente : {{ progress.pending_count }} JSON en attente (cliquer pour deplier)</summary>
+                <div id="prog-files" style="margin-top:8px;">
                 {% for f in progress.files %}
                 <div class="frow{% if f.current %} cur{% endif %}">
                     <div class="frow-top"><span class="fn">{{ f.name }}</span><span>{{ f.done }}/{{ f.total }}</span></div>
                     <div class="minibar"><div class="minifill" style="width:{% if f.total %}{% widthratio f.done f.total 100 %}{% else %}0{% endif %}%;"></div></div>
                 </div>
-                {% empty %}
-                <p class="small" style="font-style:italic;">File vide.</p>
                 {% endfor %}
-            </div>
+                </div>
+            </details>
         </div>
 
         <footer class="sp">YanabouCut</footer>
@@ -184,16 +167,8 @@ function refreshProgress() {
             document.getElementById('prog-bar').style.width = p.pct + '%';
             document.getElementById('prog-pct').textContent = p.pct + ' %';
             document.getElementById('prog-counts').textContent = p.done_searches + ' / ' + p.total_searches + ' recherches';
-            var c = p.current, txt;
-            if (c.active && (c.file || c.search || c.video)) {
-                txt = 'En cours : ' + [c.file, c.search, c.video].filter(Boolean).join(' → ');
-                if (c.target) { txt += ' (' + c.done + '/' + c.target + ' videos)'; }
-            } else if (p.total_searches > 0 && p.done_searches >= p.total_searches) {
-                txt = 'Tout est termine.';
-            } else {
-                txt = 'En attente.';
-            }
-            document.getElementById('prog-current').textContent = txt;
+            document.getElementById('prog-current').textContent = p.status_line;
+            document.getElementById('prog-summary').textContent = 'File d\u2019attente : ' + p.pending_count + ' JSON en attente (cliquer pour deplier)';
             var box = document.getElementById('prog-files');
             var names = box.querySelectorAll('.fn');
             var data = p.files;
