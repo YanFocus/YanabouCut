@@ -134,6 +134,20 @@
         </div>
 
         <div class="card">
+            <h2>File d'attente</h2>
+            <p class="small" style="margin-bottom:10px;">Vos JSON se traitent seuls, les uns apres les autres (pause 1h-2h entre JSON).</p>
+            {% if queued_files %}
+                <ul class="list">
+                    {% for q in queued_files %}
+                    <li>{{ q.name }} : {{ q.done }}/{{ q.total }} recherche(s) traitee(s)</li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="small" style="font-style:italic;">File vide.</p>
+            {% endif %}
+        </div>
+
+        <div class="card">
             <div class="topbar">
                 <h2 style="margin:0;">Journal</h2>
                 <button onclick="location.reload()" class="btn grey small-btn">Rafraichir</button>
@@ -151,10 +165,5 @@
 
         <footer class="sp">YanabouCut</footer>
     </div>
-<script>
-{% if job_running %}
-setTimeout(function(){ location.reload(); }, 5000);
-{% endif %}
-</script>
 </body>
 </html>

@@ -421,8 +421,12 @@ def start_next_queued_async():
 
 
 def run_all_queued():
-    """Traite TOUTE la file (recherche par recherche) avec pause aleatoire
-    10s-3min entre recherches. S'arrete si file vide ou Drive bloque."""
+    """Traite TOUTE la file, JSON par JSON, sans intervention.
+
+    - Dans un JSON : recherches a la suite, pause aleatoire 10s-3min entre elles.
+    - Entre deux JSON : pause aleatoire 1h-2h.
+    - S'arrete si file vide ou Drive bloque (la suite attendra).
+    """
     from django.conf import settings
     pause_min = int(getattr(settings, "QUEUE_SEARCH_PAUSE_MIN", 10))
     pause_max = int(getattr(settings, "QUEUE_SEARCH_PAUSE", 180))
@@ -431,13 +435,31 @@ def run_all_queued():
             return False
         _job_state["queue_running"] = True
     _persist_status()
-    _push_log("Traitement auto de tout le JSON.")
+    _push_log("Je traite tous les JSON a la suite, sans arret.")
     try:
-        while process_next_queued():
+        from indexation.drive import load_state as drive_load_state
+        while True:
+            task = next_queued_task()
+            if task is None:
+                break
+            fpath = task[0]
+            while True:
+                t = next_queued_task()
+                if t is None or t[0] != fpath:
+                    break
+                process_next_queued()
+                if drive_load_state().get("blocked"):
+                    _push_log("Drive bloque : j'arrete tout, la suite attendra.")
+                    return True
+                nxt = next_queued_task()
+                if nxt is not None and nxt[0] == fpath:
+                    pause = random.randint(pause_min, pause_max)
+                    _push_log(f"J'attends {pause}s avant la recherche suivante.")
+                    time.sleep(pause)
             if next_queued_task() is None:
                 break
-            pause = random.randint(pause_min, pause_max)
-            _push_log(f"J'attends {pause}s avant la recherche suivante.")
+            pause = random.randint(3600, 7200)
+            _push_log(f"JSON {fpath.name} fini. J'attends {pause // 3600}h {(pause % 3600) // 60}min avant le JSON suivant.")
             time.sleep(pause)
     finally:
         with _job_lock:

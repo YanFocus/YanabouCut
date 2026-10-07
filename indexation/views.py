@@ -54,54 +54,29 @@ def index(request):
             else:
                 messages.error(request, f"Toujours bloque ({problem}). Liberez de l'espace sur Drive.")
             return redirect("home")
-        elif settings.PIPELINE_MODE == "queue":
-            # Mode heberge : mise en file, traitement par tache planifiee
-            json_file = request.FILES.get("json_file")
-            if not json_file:
-                messages.error(request, "Veuillez selectionner un fichier JSON.")
-            else:
-                try:
-                    raw = json_file.read().decode("utf-8")
-                    data = json.loads(raw)
-                    if not isinstance(data, dict) or not data:
-                        raise ValueError("Le JSON doit etre un objet non vide, ex : {\"recherche1\": \"dog in house\"}")
-                    searches = {str(k): str(v) for k, v in data.items() if str(v).strip()}
-                    if not searches:
-                        raise ValueError("Aucune requete valide trouvee dans le JSON.")
-                    fname = enqueue_searches(searches)
-                    current_json_path().write_text(json.dumps(searches, ensure_ascii=False, indent=2), encoding="utf-8")
-                    clear_logs()
-                    if start_all_queued_async():
-                        messages.success(request, f"{len(searches)} recherche(s) : traitement lance. Suivez le journal.")
-                    else:
-                        messages.success(request, f"{len(searches)} recherche(s) mise(s) en file ({fname}). "
-                                                  "Un traitement est deja en cours : elles seront traitees a la suite.")
-                except Exception as e:
-                    messages.error(request, f"Erreur : {e}")
-        elif is_running():
-            messages.error(request, "Un traitement est deja en cours. Attendez la fin avant de relancer.")
+        json_file = request.FILES.get("json_file")
+        if not json_file:
+            messages.error(request, "Veuillez selectionner un fichier JSON.")
         else:
-            json_file = request.FILES.get("json_file")
-            if not json_file:
-                messages.error(request, "Veuillez selectionner un fichier JSON.")
-            else:
-                try:
-                    raw = json_file.read().decode("utf-8")
-                    data = json.loads(raw)
-                    if not isinstance(data, dict) or not data:
-                        raise ValueError("Le JSON doit etre un objet non vide, ex : {\"recherche1\": \"dog in house\"}")
-                    searches = {str(k): str(v) for k, v in data.items() if str(v).strip()}
-                    if not searches:
-                        raise ValueError("Aucune requete valide trouvee dans le JSON.")
-                    ok = start_job_async(searches)
-                    if ok:
-                        current_json_path().write_text(json.dumps(searches, ensure_ascii=False, indent=2), encoding="utf-8")
-                        clear_logs()
-                        messages.success(request, f"Traitement demarre pour {len(searches)} recherche(s) : {', '.join(searches.keys())}. Journal reinitialise : il affichera ce JSON.")
-                    else:
-                        messages.error(request, "Un traitement est deja en cours.")
-                except Exception as e:
-                    messages.error(request, f"Erreur : {e}")
+            try:
+                raw = json_file.read().decode("utf-8")
+                data = json.loads(raw)
+                if not isinstance(data, dict) or not data:
+                    raise ValueError("Le JSON doit etre un objet non vide, ex : {\"recherche1\": \"dog in house\"}")
+                searches = {str(k): str(v) for k, v in data.items() if str(v).strip()}
+                if not searches:
+                    raise ValueError("Aucune requete valide trouvee dans le JSON.")
+                # Toujours en file + demarrage auto : tout s'enchaine seul,
+                # y compris les JSON deja en attente (pause 1h-2h entre JSON).
+                fname = enqueue_searches(searches)
+                current_json_path().write_text(json.dumps(searches, ensure_ascii=False, indent=2), encoding="utf-8")
+                clear_logs()
+                if start_all_queued_async():
+                    messages.success(request, f"{len(searches)} recherche(s) : traitement lance, tout s'enchaine seul. Suivez le journal.")
+                else:
+                    messages.success(request, f"{len(searches)} recherche(s) mise(s) en file ({fname}). Prise en charge automatique a la suite.")
+            except Exception as e:
+                messages.error(request, f"Erreur : {e}")
         return redirect("home")
 
     site_json_path = Path(settings.SITE_JSON_PATH)
@@ -113,23 +88,22 @@ def index(request):
     if queue_mode:
         # Le processus planifie est separe : on lit son journal via le fichier
         job = load_status_file()
-        _, pending_dir, _ = queue_dirs()
-        progress = load_queue_progress()
-        queued_files = []
-        for fpath in sorted(pending_dir.glob("*.json")):
-            try:
-                searches = json.loads(fpath.read_text(encoding="utf-8")).get("searches", {})
-            except Exception:
-                searches = {}
-            done_keys = progress.get(fpath.name, [])
-            queued_files.append({
-                "name": fpath.name,
-                "total": len(searches),
-                "done": len([k for k in searches if k in done_keys]),
-            })
     else:
         job = get_job_status()
-        queued_files = []
+    _, pending_dir, _ = queue_dirs()
+    progress = load_queue_progress()
+    queued_files = []
+    for fpath in sorted(pending_dir.glob("*.json")):
+        try:
+            searches = json.loads(fpath.read_text(encoding="utf-8")).get("searches", {})
+        except Exception:
+            searches = {}
+        done_keys = progress.get(fpath.name, [])
+        queued_files.append({
+            "name": fpath.name,
+            "total": len(searches),
+            "done": len([k for k in searches if k in done_keys]),
+        })
     current_searches = []
     if current_json_path().exists():
         try:
