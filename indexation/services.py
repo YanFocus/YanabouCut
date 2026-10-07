@@ -23,6 +23,7 @@ _job_state = {
     "current_video": None,
     "current_done": 0,
     "current_target": 0,
+    "current_step": None,
     "started_at": None,
     "finished_at": None,
 }
@@ -76,6 +77,13 @@ def save_site_json(state):
     os.replace(tmp, site_json)
 
 
+def _set_step(text):
+    """Mémorise l'action précise en cours (affichée en une phrase)."""
+    with _job_lock:
+        _job_state["current_step"] = text
+    _persist_status()
+
+
 def _push_log(message, level="info"):
     entry = {"time": _now_str(), "level": level, "message": message}
     with _job_lock:
@@ -99,6 +107,7 @@ def _persist_status():
                 "current_video": _job_state["current_video"],
                 "current_done": _job_state["current_done"],
                 "current_target": _job_state["current_target"],
+                "current_step": _job_state["current_step"],
                 "started_at": _job_state["started_at"],
                 "finished_at": _job_state["finished_at"],
                 "logs": _job_state["logs"][-200:],
@@ -127,6 +136,7 @@ def get_job_status():
             "current_video": _job_state["current_video"],
             "current_done": _job_state["current_done"],
             "current_target": _job_state["current_target"],
+            "current_step": _job_state["current_step"],
             "started_at": _job_state["started_at"],
             "finished_at": _job_state["finished_at"],
             "logs": list(_job_state["logs"][-200:]),
@@ -264,6 +274,7 @@ def run_job(searches, wait_seconds=None):
         _push_log(f"[{key}] Je lance la recherche \"{query}\" (objectif : {target} videos).")
 
         # 1. Appel API
+        _set_step(f"Je cherche \"{query}\" sur Pixabay...")
         try:
             hits = pixabay_search(query, api_key)
             _push_log(f"[{key}] Je cherche sur Pixabay : {len(hits)} resultats.")
@@ -280,6 +291,7 @@ def run_job(searches, wait_seconds=None):
                 pause_search = wait_seconds if wait_seconds is not None else random.randint(10, 180)
                 if pause_search > 0:
                     _push_log(f"[{key}] J'attends {pause_search}s avant {keys[idx+1]}.")
+                    _set_step(f"J'attends {pause_search}s avant {keys[idx+1]} ({key} finie).")
                     time.sleep(pause_search)
             continue
 
@@ -303,6 +315,7 @@ def run_job(searches, wait_seconds=None):
             dest = videos_dir / f"{new_name}.mp4"
             video_url = cand.get("url") or ""
             _push_log(f"[{key}] Je telecharge la video {downloaded_this_search+1}/{target} (ID {uid}) sous {new_name}.mp4")
+            _set_step(f"Je telecharge {new_name}.mp4 (video {downloaded_this_search+1}/{target}, {key})...")
             try:
                 download_video(video_url, dest)
             except Exception as e:
@@ -347,6 +360,8 @@ def run_job(searches, wait_seconds=None):
             uploaded_ok = False
             for attempt in range(1, 4):
                 _push_log(f"[{key}] J'envoie {drive_name} vers Drive (essai {attempt}/3).")
+                if attempt == 1:
+                    _set_step(f"J'envoie {drive_name} vers Drive ({key})...")
                 try:
                     account_used, drive_result = send_to_drive(dest, drive_name, lambda m: _push_log(f"[{key}] {m}"))
                 except Exception as e:
@@ -402,6 +417,7 @@ def run_job(searches, wait_seconds=None):
             if downloaded_this_search < target:
                 pause_video = random.randint(2, 10)
                 _push_log(f"[{key}] J'attends {pause_video}s avant la video suivante.")
+                _set_step(f"J'attends {pause_video}s avant la video suivante ({key}).")
                 time.sleep(pause_video)
 
         if stop_requested:
@@ -411,6 +427,7 @@ def run_job(searches, wait_seconds=None):
             pause_search = wait_seconds if wait_seconds is not None else random.randint(10, 180)
             if pause_search > 0:
                 _push_log(f"J'attends {pause_search}s ({pause_search // 60} min {pause_search % 60}s) avant {keys[idx+1]}.")
+                _set_step(f"J'attends {pause_search // 60} min {pause_search % 60}s avant {keys[idx+1]}.")
                 time.sleep(pause_search)
 
     _push_log("Fini pour toutes les recherches. Rechargez un nouveau JSON pour relancer.")
@@ -422,6 +439,7 @@ def run_job(searches, wait_seconds=None):
     with _job_lock:
         _job_state["running"] = False
         _job_state["current_search"] = None
+        _job_state["current_step"] = None
         _job_state["finished_at"] = datetime.now().isoformat()
     _persist_status()
     return True
@@ -482,11 +500,13 @@ def run_all_queued():
                 if nxt is not None and nxt[0] == fpath:
                     pause = random.randint(pause_min, pause_max)
                     _push_log(f"J'attends {pause}s avant la recherche suivante.")
+                    _set_step(f"J'attends {pause}s avant la recherche suivante ({fpath.name}).")
                     time.sleep(pause)
             if next_queued_task() is None:
                 break
             pause = random.randint(3600, 7200)
             _push_log(f"JSON {fpath.name} fini. J'attends {pause // 3600}h {(pause % 3600) // 60}min avant le JSON suivant.")
+            _set_step(f"JSON {fpath.name} fini. J'attends {pause // 3600}h {(pause % 3600) // 60}min avant le JSON suivant.")
             time.sleep(pause)
     finally:
         with _job_lock:
@@ -497,6 +517,7 @@ def run_all_queued():
                 _job_state["current_video"] = None
                 _job_state["current_done"] = 0
                 _job_state["current_target"] = 0
+                _job_state["current_step"] = None
         _persist_status()
     return True
 
@@ -610,7 +631,8 @@ def load_status_file():
     _, _, status_path = get_paths()
     default = {"running": False, "queue_running": False, "current_search": None,
                "current_file": None, "current_video": None, "current_done": 0,
-               "current_target": 0, "started_at": None, "finished_at": None, "logs": []}
+               "current_target": 0, "current_step": None, "started_at": None,
+               "finished_at": None, "logs": []}
     if status_path.exists():
         try:
             data = json.loads(status_path.read_text(encoding="utf-8"))
@@ -676,7 +698,9 @@ def queue_overview():
             f["current"] = True
     pct = round(done_searches * 100 / total_searches) if total_searches else 0
     pending_count = sum(1 for f in files if f["done"] < f["total"])
-    if cur["active"] and (cur["file"] or cur["search"] or cur["video"]):
+    if cur["active"] and cur.get("step"):
+        status_line = cur["step"]
+    elif cur["active"] and (cur["file"] or cur["search"] or cur["video"]):
         parts = [p for p in (cur["file"], cur["search"], cur["video"]) if p]
         status_line = "En cours : " + " → ".join(parts)
         if cur["target"]:
@@ -703,6 +727,7 @@ def _current_state():
             "video": st.get("current_video"),
             "done": st.get("current_done", 0),
             "target": st.get("current_target", 0),
+            "step": st.get("current_step"),
             "active": bool(st.get("running") or st.get("queue_running")),
         }
     with _job_lock:
@@ -712,6 +737,7 @@ def _current_state():
             "video": _job_state["current_video"],
             "done": _job_state["current_done"],
             "target": _job_state["current_target"],
+            "step": _job_state["current_step"],
             "active": bool(_job_state["running"] or _job_state["queue_running"]),
         }
 
