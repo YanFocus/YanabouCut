@@ -148,7 +148,7 @@
                 <div id="prog-files" style="margin-top:8px;">
                 {% for f in progress.files %}
                 <div class="frow{% if f.current %} cur{% endif %}">
-                    <div class="frow-top"><span class="fn">{{ f.name }}</span><span>{{ f.done }}/{{ f.total }}</span></div>
+                    <div class="frow-top"><span class="fn">{{ f.label }}</span><span>{{ f.done }}/{{ f.total }}</span></div>
                     <div class="minibar"><div class="minifill" style="width:{% if f.total %}{% widthratio f.done f.total 100 %}{% else %}0{% endif %}%;"></div></div>
                 </div>
                 {% endfor %}
@@ -176,7 +176,7 @@ function refreshProgress() {
             if (names.length === data.length) {
                 for (var i = 0; i < data.length; i++) {
                     var row = names[i].closest('.frow');
-                    names[i].textContent = data[i].name;
+                    names[i].textContent = data[i].label || data[i].name;
                     row.querySelector('.frow-top span:last-child').textContent = data[i].done + '/' + data[i].total;
                     row.querySelector('.minifill').style.width = (data[i].total ? Math.round(data[i].done * 100 / data[i].total) : 0) + '%';
                     if (data[i].current) { row.classList.add('cur'); } else { row.classList.remove('cur'); }
@@ -185,8 +185,9 @@ function refreshProgress() {
                 var html2 = '';
                 data.forEach(function(f) {
                     var fpct = f.total ? Math.round(f.done * 100 / f.total) : 0;
+                    var flabel = f.label || f.name;
                     html2 += '<div class="frow' + (f.current ? ' cur' : '') + '">'
-                        + '<div class="frow-top"><span class="fn">' + f.name + '</span><span>' + f.done + '/' + f.total + '</span></div>'
+                        + '<div class="frow-top"><span class="fn">' + flabel + '</span><span>' + f.done + '/' + f.total + '</span></div>'
                         + '<div class="minibar"><div class="minifill" style="width:' + fpct + '%"></div></div></div>';
                 });
                 if (!data.length) { html2 = '<p class="small" style="font-style:italic;">File vide.</p>'; }

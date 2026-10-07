@@ -24,6 +24,7 @@ _job_state = {
     "current_done": 0,
     "current_target": 0,
     "current_step": None,
+    "last_step": None,
     "started_at": None,
     "finished_at": None,
 }
@@ -81,6 +82,7 @@ def _set_step(text):
     """Mémorise l'action précise en cours (affichée en une phrase)."""
     with _job_lock:
         _job_state["current_step"] = text
+        _job_state["last_step"] = text
     _persist_status()
 
 
@@ -108,6 +110,7 @@ def _persist_status():
                 "current_done": _job_state["current_done"],
                 "current_target": _job_state["current_target"],
                 "current_step": _job_state["current_step"],
+                "last_step": _job_state.get("last_step"),
                 "started_at": _job_state["started_at"],
                 "finished_at": _job_state["finished_at"],
                 "logs": _job_state["logs"][-200:],
@@ -137,6 +140,7 @@ def get_job_status():
             "current_done": _job_state["current_done"],
             "current_target": _job_state["current_target"],
             "current_step": _job_state["current_step"],
+            "last_step": _job_state.get("last_step"),
             "started_at": _job_state["started_at"],
             "finished_at": _job_state["finished_at"],
             "logs": list(_job_state["logs"][-200:]),
@@ -570,19 +574,22 @@ def save_queue_progress(progress):
     progress_path().write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def enqueue_searches(searches):
-    """Enregistre un JSON uploade dans la file. Retourne le nom du fichier."""
+def enqueue_searches(searches, original_name=None):
+    """Enregistre un JSON uploade dans la file. Retourne le nom du fichier.
+    Garde le vrai nom d'origine (affichage) + horodatage (unicite)."""
+    import re
     _, pending, _ = queue_dirs()
     # Microsecondes incluses : 2 uploads dans la meme seconde ne se collisionnent jamais
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    fname = f"{stamp}.json"
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", (original_name or "upload").rsplit(".", 1)[0])[:50] or "upload"
+    fname = f"{stamp}_{safe}.json"
     n = 1
     while (pending / fname).exists():
         n += 1
-        fname = f"{stamp}_{n}.json"
+        fname = f"{stamp}_{safe}_{n}.json"
     (pending / fname).write_text(
-        json.dumps({"searches": searches}, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+        json.dumps({"name": original_name or fname, "searches": searches},
+                   ensure_ascii=False, indent=2), encoding="utf-8")
     return fname
 
 
@@ -631,7 +638,7 @@ def load_status_file():
     _, _, status_path = get_paths()
     default = {"running": False, "queue_running": False, "current_search": None,
                "current_file": None, "current_video": None, "current_done": 0,
-               "current_target": 0, "current_step": None, "started_at": None,
+               "current_target": 0, "current_step": None, "last_step": None, "started_at": None,
                "finished_at": None, "logs": []}
     if status_path.exists():
         try:
@@ -675,20 +682,26 @@ def queue_overview():
     total_searches = 0
     for fpath in sorted(pending_dir.glob("*.json")):
         try:
-            searches = json.loads(fpath.read_text(encoding="utf-8")).get("searches", {})
+            content = json.loads(fpath.read_text(encoding="utf-8"))
+            searches = content.get("searches", {})
+            label = content.get("name") or fpath.name
         except Exception:
             searches = {}
+            label = fpath.name
         done_keys = [k for k in searches if k in progress.get(fpath.name, [])]
-        files.append({"name": fpath.name, "done": len(done_keys), "total": len(searches),
+        files.append({"name": fpath.name, "label": label, "done": len(done_keys), "total": len(searches),
                       "current": False})
         done_searches += len(done_keys)
         total_searches += len(searches)
     for fpath in sorted(done_dir.glob("*.json")):
         try:
-            n = len(json.loads(fpath.read_text(encoding="utf-8")).get("searches", {}))
+            content = json.loads(fpath.read_text(encoding="utf-8"))
+            n = len(content.get("searches", {}))
+            label = content.get("name") or fpath.name
         except Exception:
             n = 0
-        files.append({"name": fpath.name, "done": n, "total": n, "current": False})
+            label = fpath.name
+        files.append({"name": fpath.name, "label": label, "done": n, "total": n, "current": False})
         done_searches += n
         total_searches += n
     cur = _current_state()
@@ -696,8 +709,10 @@ def queue_overview():
     for f in files:
         if cur_file and f["name"] == cur_file:
             f["current"] = True
+            cur["file"] = f["label"]  # affiche le vrai nom, pas le technique
     pct = round(done_searches * 100 / total_searches) if total_searches else 0
     pending_count = sum(1 for f in files if f["done"] < f["total"])
+    last = cur.get("last")
     if cur["active"] and cur.get("step"):
         status_line = cur["step"]
     elif cur["active"] and (cur["file"] or cur["search"] or cur["video"]):
@@ -707,8 +722,14 @@ def queue_overview():
             status_line += f" ({cur['done']}/{cur['target']} videos)"
     elif pending_count:
         status_line = f"{pending_count} JSON en attente de traitement."
+        if last:
+            status_line += f" Derniere action : {last}"
     elif total_searches:
         status_line = "Tout est termine."
+        if last:
+            status_line += f" Derniere action : {last}"
+    elif last:
+        status_line = f"Derniere action : {last}"
     else:
         status_line = "En attente."
     return {"files": files, "done_searches": done_searches,
@@ -728,6 +749,7 @@ def _current_state():
             "done": st.get("current_done", 0),
             "target": st.get("current_target", 0),
             "step": st.get("current_step"),
+            "last": st.get("last_step"),
             "active": bool(st.get("running") or st.get("queue_running")),
         }
     with _job_lock:
@@ -738,6 +760,7 @@ def _current_state():
             "done": _job_state["current_done"],
             "target": _job_state["current_target"],
             "step": _job_state["current_step"],
+            "last": _job_state.get("last_step"),
             "active": bool(_job_state["running"] or _job_state["queue_running"]),
         }
 

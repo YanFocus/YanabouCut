@@ -67,7 +67,7 @@ def index(request):
                         raise ValueError("aucune requete valide")
                     # Toujours en file + demarrage auto : tout s'enchaine seul,
                     # y compris les JSON deja en attente (pause 1h-2h entre JSON).
-                    fname = enqueue_searches(searches)
+                    fname = enqueue_searches(searches, original_name=json_file.name)
                     queued.append((json_file.name, fname, len(searches)))
                 except Exception as e:
                     errors.append(f"{json_file.name} : {e}")
