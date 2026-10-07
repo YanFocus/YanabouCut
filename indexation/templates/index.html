@@ -14,15 +14,11 @@
         .wrap { max-width: 960px; margin: 0 auto; }
         header.hero {
             text-align: center; padding: 28px 16px; margin-bottom: 18px;
-            background: linear-gradient(135deg, #16a34a 0%, #16a34a 30%, #dc2626 65%, #facc15 100%);
+            background: linear-gradient(135deg, #166534, #15803d 45%, #ca8a04 100%);
             color: #fff; border-radius: 18px;
-            box-shadow: 0 10px 24px rgba(220, 38, 38, .35);
+            box-shadow: 0 10px 24px rgba(22, 101, 52, .35);
         }
-        header.hero h1 {
-            font-size: 2rem; font-weight: 800; letter-spacing: .5px;
-            color: #fff;
-            text-shadow: 0 2px 8px rgba(0, 0, 0, .4);
-        }
+        header.hero h1 { font-size: 2rem; font-weight: 800; letter-spacing: .5px; }
         .card {
             background: #fff; border-radius: 16px; padding: 18px;
             margin-bottom: 16px; box-shadow: 0 4px 14px rgba(15, 23, 42, .08);
@@ -59,12 +55,21 @@
         ul.list li:last-child { border-bottom: 0; }
         ul.list strong { color: #1f2937; }
         .small { font-size: .78rem; color: #6b7280; }
-        #logs {
-            background: #0b1220; color: #4ade80; font-family: ui-monospace, Menlo, Consolas, monospace;
-            font-size: .75rem; border-radius: 12px; padding: 14px;
-            max-height: 320px; overflow-y: auto; line-height: 1.65;
+        .bigbar { background: #e2e8f0; border-radius: 999px; height: 22px; overflow: hidden; margin: 10px 0 6px; }
+        .bigfill { background: linear-gradient(90deg, #4f46e5, #16a34a); height: 100%; width: 0%; border-radius: 999px; transition: width .6s; }
+        .progline { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+        .progline .pct { font-size: 1.4rem; font-weight: 800; color: #4f46e5; }
+        .currentbox {
+            background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px;
+            padding: 10px 14px; font-size: .88rem; margin: 10px 0; color: #3730a3;
         }
-        #logs .t { color: #64748b; }
+        .frow { padding: 8px 2px; border-bottom: 1px solid #f1f5f9; }
+        .frow:last-child { border-bottom: 0; }
+        .frow.cur { background: #eef2ff; border-radius: 8px; padding-left: 8px; padding-right: 8px; }
+        .frow-top { display: flex; justify-content: space-between; gap: 8px; font-size: .82rem; color: #374151; }
+        .frow-top .fn { font-weight: 700; word-break: break-all; }
+        .minibar { background: #e2e8f0; border-radius: 999px; height: 8px; overflow: hidden; margin-top: 5px; }
+        .minifill { background: #4f46e5; height: 100%; border-radius: 999px; transition: width .6s; }
         .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px; flex-wrap: wrap; }
         .btn.small-btn { width: auto; min-height: 40px; padding: 8px 16px; font-size: .85rem; }
         footer.sp { text-align: center; color: #9ca3af; font-size: .75rem; margin-top: 10px; }
@@ -92,7 +97,7 @@
                     {% if drive_state.blocked %}
                         <span class="pill block">BLOQUE : {{ drive_state.reason }}</span>
                     {% elif job_running %}
-                        <span class="pill run">Traitement EN COURS{% if job.current_search %} : {{ job.current_search }}{% endif %}</span>
+                        <span class="pill run">Traitement EN COURS</span>
                     {% else %}
                         <span class="pill idle">Aucun traitement en cours</span>
                     {% endif %}
@@ -138,36 +143,84 @@
         </div>
 
         <div class="card">
-            <h2>File d'attente</h2>
-            <p class="small" style="margin-bottom:10px;">Vos JSON se traitent seuls, les uns apres les autres (pause 1h-2h entre JSON).</p>
-            {% if queued_files %}
-                <ul class="list">
-                    {% for q in queued_files %}
-                    <li>{{ q.name }} : {{ q.done }}/{{ q.total }} recherche(s) traitee(s)</li>
-                    {% endfor %}
-                </ul>
-            {% else %}
-                <p class="small" style="font-style:italic;">File vide.</p>
-            {% endif %}
-        </div>
-
-        <div class="card">
             <div class="topbar">
-                <h2 style="margin:0;">Journal</h2>
+                <h2 style="margin:0;">Progression</h2>
                 <button onclick="location.reload()" class="btn grey small-btn">Rafraichir</button>
             </div>
-            {% if job_logs %}
-                <div id="logs">
-                    {% for log in job_logs %}
-                        <div><span class="t">[{{ log.time }}]</span> {{ log.message }}</div>
-                    {% endfor %}
+            <div class="progline">
+                <span class="pct" id="prog-pct">{{ progress.pct }} %</span>
+                <span class="small" id="prog-counts">{{ progress.done_searches }} / {{ progress.total_searches }} recherches</span>
+            </div>
+            <div class="bigbar"><div class="bigfill" id="prog-bar" style="width:{{ progress.pct }}%;"></div></div>
+            <div class="currentbox" id="prog-current">
+                {% if progress.current.active and progress.current.file %}
+                    En cours : {{ progress.current.file }}{% if progress.current.search %} &rarr; {{ progress.current.search }}{% endif %}{% if progress.current.video %} &rarr; {{ progress.current.video }}{% endif %}{% if progress.current.target %} ({{ progress.current.done }}/{{ progress.current.target }} videos){% endif %}
+                {% elif progress.total_searches and progress.done_searches >= progress.total_searches %}
+                    Tout est termine.
+                {% else %}
+                    En attente.
+                {% endif %}
+            </div>
+            <div id="prog-files">
+                {% for f in progress.files %}
+                <div class="frow{% if f.current %} cur{% endif %}">
+                    <div class="frow-top"><span class="fn">{{ f.name }}</span><span>{{ f.done }}/{{ f.total }}</span></div>
+                    <div class="minibar"><div class="minifill" style="width:{% if f.total %}{% widthratio f.done f.total 100 %}{% else %}0{% endif %}%;"></div></div>
                 </div>
-            {% else %}
-                <p class="small" style="font-style:italic;">Aucun log pour le moment.</p>
-            {% endif %}
+                {% empty %}
+                <p class="small" style="font-style:italic;">File vide.</p>
+                {% endfor %}
+            </div>
         </div>
 
         <footer class="sp">YanabouCut</footer>
     </div>
+<script>
+function refreshProgress() {
+    fetch("{% url 'job-status' %}")
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var p = d.progress;
+            document.getElementById('prog-bar').style.width = p.pct + '%';
+            document.getElementById('prog-pct').textContent = p.pct + ' %';
+            document.getElementById('prog-counts').textContent = p.done_searches + ' / ' + p.total_searches + ' recherches';
+            var c = p.current, txt;
+            if (c.active && (c.file || c.search || c.video)) {
+                txt = 'En cours : ' + [c.file, c.search, c.video].filter(Boolean).join(' → ');
+                if (c.target) { txt += ' (' + c.done + '/' + c.target + ' videos)'; }
+            } else if (p.total_searches > 0 && p.done_searches >= p.total_searches) {
+                txt = 'Tout est termine.';
+            } else {
+                txt = 'En attente.';
+            }
+            document.getElementById('prog-current').textContent = txt;
+            var box = document.getElementById('prog-files');
+            var names = box.querySelectorAll('.fn');
+            var data = p.files;
+            // Met a jour sans reconstruire (pas de saut visuel) quand c'est possible
+            if (names.length === data.length) {
+                for (var i = 0; i < data.length; i++) {
+                    var row = names[i].closest('.frow');
+                    names[i].textContent = data[i].name;
+                    row.querySelector('.frow-top span:last-child').textContent = data[i].done + '/' + data[i].total;
+                    row.querySelector('.minifill').style.width = (data[i].total ? Math.round(data[i].done * 100 / data[i].total) : 0) + '%';
+                    if (data[i].current) { row.classList.add('cur'); } else { row.classList.remove('cur'); }
+                }
+            } else {
+                var html2 = '';
+                data.forEach(function(f) {
+                    var fpct = f.total ? Math.round(f.done * 100 / f.total) : 0;
+                    html2 += '<div class="frow' + (f.current ? ' cur' : '') + '">'
+                        + '<div class="frow-top"><span class="fn">' + f.name + '</span><span>' + f.done + '/' + f.total + '</span></div>'
+                        + '<div class="minibar"><div class="minifill" style="width:' + fpct + '%"></div></div></div>';
+                });
+                if (!data.length) { html2 = '<p class="small" style="font-style:italic;">File vide.</p>'; }
+                box.innerHTML = html2;
+            }
+        })
+        .catch(function() {});
+}
+setInterval(refreshProgress, 5000);
+</script>
 </body>
 </html>

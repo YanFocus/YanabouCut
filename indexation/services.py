@@ -19,6 +19,10 @@ _job_state = {
     "queue_running": False,
     "logs": [],
     "current_search": None,
+    "current_file": None,
+    "current_video": None,
+    "current_done": 0,
+    "current_target": 0,
     "started_at": None,
     "finished_at": None,
 }
@@ -91,6 +95,10 @@ def _persist_status():
                 "running": _job_state["running"],
                 "queue_running": _job_state["queue_running"],
                 "current_search": _job_state["current_search"],
+                "current_file": _job_state["current_file"],
+                "current_video": _job_state["current_video"],
+                "current_done": _job_state["current_done"],
+                "current_target": _job_state["current_target"],
                 "started_at": _job_state["started_at"],
                 "finished_at": _job_state["finished_at"],
                 "logs": _job_state["logs"][-200:],
@@ -115,6 +123,10 @@ def get_job_status():
             "running": _job_state["running"],
             "queue_running": _job_state["queue_running"],
             "current_search": _job_state["current_search"],
+            "current_file": _job_state["current_file"],
+            "current_video": _job_state["current_video"],
+            "current_done": _job_state["current_done"],
+            "current_target": _job_state["current_target"],
             "started_at": _job_state["started_at"],
             "finished_at": _job_state["finished_at"],
             "logs": list(_job_state["logs"][-200:]),
@@ -245,6 +257,10 @@ def run_job(searches, wait_seconds=None):
         _persist_status()
 
         target = random.randint(2, 6)
+        with _job_lock:
+            _job_state["current_target"] = target
+            _job_state["current_done"] = 0
+            _job_state["current_video"] = None
         _push_log(f"[{key}] Je lance la recherche \"{query}\" (objectif : {target} videos).")
 
         # 1. Appel API
@@ -282,6 +298,8 @@ def run_job(searches, wait_seconds=None):
             # Nouveau nom via compteur persistant
             new_counter = int(state.get("counter", 0)) + 1
             new_name = f"video_{new_counter}"
+            with _job_lock:
+                _job_state["current_video"] = f"{new_name}.mp4"
             dest = videos_dir / f"{new_name}.mp4"
             video_url = cand.get("url") or ""
             _push_log(f"[{key}] Je telecharge la video {downloaded_this_search+1}/{target} (ID {uid}) sous {new_name}.mp4")
@@ -316,6 +334,8 @@ def run_job(searches, wait_seconds=None):
                 continue
             existing_ids.add(uid)
             downloaded_this_search += 1
+            with _job_lock:
+                _job_state["current_done"] = downloaded_this_search
             _push_log(f"[{key}] {new_name}.mp4 enregistre (ID {uid}). Compteur : {new_counter}.")
 
             # 4. Envoi Google Drive OBLIGATOIRE : la video suivante n'est traitee
@@ -473,6 +493,10 @@ def run_all_queued():
             _job_state["queue_running"] = False
             if not _job_state["running"]:
                 _job_state["current_search"] = None
+                _job_state["current_file"] = None
+                _job_state["current_video"] = None
+                _job_state["current_done"] = 0
+                _job_state["current_target"] = 0
         _persist_status()
     return True
 
@@ -585,7 +609,8 @@ def load_status_file():
     car le processus planifie est separe du processus web)."""
     _, _, status_path = get_paths()
     default = {"running": False, "queue_running": False, "current_search": None,
-               "started_at": None, "finished_at": None, "logs": []}
+               "current_file": None, "current_video": None, "current_done": 0,
+               "current_target": 0, "started_at": None, "finished_at": None, "logs": []}
     if status_path.exists():
         try:
             data = json.loads(status_path.read_text(encoding="utf-8"))
@@ -618,6 +643,66 @@ def acquire_cron_lock(max_age_hours=1):
         return False, age
 
 
+def queue_overview():
+    """Synthese pour la barre de progression : fichiers (nom, fait, total),
+    progression globale et element en cours (fichier, recherche, video)."""
+    _, pending_dir, done_dir = queue_dirs()
+    progress = load_queue_progress()
+    files = []
+    done_searches = 0
+    total_searches = 0
+    for fpath in sorted(pending_dir.glob("*.json")):
+        try:
+            searches = json.loads(fpath.read_text(encoding="utf-8")).get("searches", {})
+        except Exception:
+            searches = {}
+        done_keys = [k for k in searches if k in progress.get(fpath.name, [])]
+        files.append({"name": fpath.name, "done": len(done_keys), "total": len(searches),
+                      "current": False})
+        done_searches += len(done_keys)
+        total_searches += len(searches)
+    for fpath in sorted(done_dir.glob("*.json")):
+        try:
+            n = len(json.loads(fpath.read_text(encoding="utf-8")).get("searches", {}))
+        except Exception:
+            n = 0
+        files.append({"name": fpath.name, "done": n, "total": n, "current": False})
+        done_searches += n
+        total_searches += n
+    cur = _current_state()
+    cur_file = cur["file"]
+    for f in files:
+        if cur_file and f["name"] == cur_file:
+            f["current"] = True
+    pct = round(done_searches * 100 / total_searches) if total_searches else 0
+    return {"files": files, "done_searches": done_searches,
+            "total_searches": total_searches, "pct": pct, "current": cur}
+
+
+def _current_state():
+    """Etat courant : fichier en mode file (processus separe), memoire sinon."""
+    from django.conf import settings
+    if getattr(settings, "PIPELINE_MODE", "thread") == "queue":
+        st = load_status_file()
+        return {
+            "file": st.get("current_file"),
+            "search": st.get("current_search"),
+            "video": st.get("current_video"),
+            "done": st.get("current_done", 0),
+            "target": st.get("current_target", 0),
+            "active": bool(st.get("running") or st.get("queue_running")),
+        }
+    with _job_lock:
+        return {
+            "file": _job_state["current_file"],
+            "search": _job_state["current_search"],
+            "video": _job_state["current_video"],
+            "done": _job_state["current_done"],
+            "target": _job_state["current_target"],
+            "active": bool(_job_state["running"] or _job_state["queue_running"]),
+        }
+
+
 def release_cron_lock():
     base, _, _ = queue_dirs()
     try:
@@ -647,6 +732,8 @@ def process_next_queued():
             _persist_status()
             return False
         fpath, key, query = task
+        with _job_lock:
+            _job_state["current_file"] = fpath.name
         from indexation.drive import load_state as drive_load_state
         if drive_load_state().get("blocked"):
             _push_log("Drive bloque : passage ignore (bouton Reessayer).")

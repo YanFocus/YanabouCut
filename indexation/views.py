@@ -15,6 +15,7 @@ from .services import (
     load_site_json,
     load_status_file,
     queue_dirs,
+    queue_overview,
     start_all_queued_async,
     start_job_async,
     start_next_queued_async,
@@ -127,12 +128,12 @@ def index(request):
         "total_videos_downloaded": total,
         "job": job,
         "job_running": job["running"] or job.get("queue_running", False),
-        "job_logs": job["logs"],
         "drive_state": drive_load_state(),
         "pending_videos": [p.name for p in _pending_videos()],
         "queue_mode": queue_mode,
         "queued_files": queued_files,
         "current_searches": current_searches,
+        "progress": queue_overview(),
     })
 
 
@@ -292,15 +293,15 @@ def download_site_json(request):
 
 def job_status_api(request):
     state = load_site_json()
-    job = get_job_status()
+    if settings.PIPELINE_MODE == "queue":
+        job = load_status_file()
+    else:
+        job = get_job_status()
     return JsonResponse({
-        "running": job["running"],
-        "queue_running": job.get("queue_running", False),
+        "running": job["running"] or job.get("queue_running", False),
         "current_search": job["current_search"],
-        "started_at": job["started_at"],
-        "finished_at": job["finished_at"],
-        "logs": job["logs"],
         "counter": int(state.get("counter", 0)),
         "total": len(state.get("videos", [])),
         "json_available": Path(settings.SITE_JSON_PATH).exists(),
+        "progress": queue_overview(),
     })
