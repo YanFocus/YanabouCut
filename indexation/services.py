@@ -330,6 +330,7 @@ def run_job(searches, wait_seconds=None):
                 "nouveau_nom": new_name,
                 "identifiant_unique": uid,
                 "tags": tags_raw,
+                "duree": cand.get("duration"),
             }
             state.setdefault("videos", []).append(entry)
             state["counter"] = new_counter
@@ -469,6 +470,16 @@ def start_next_queued_async():
     return True
 
 
+def _format_pause(seconds):
+    """Formate une duree d'attente : '45s', '12min' ou '1h 05min'."""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}min"
+    return f"{seconds // 3600}h {(seconds % 3600) // 60:02d}min"
+
+
 def run_all_queued():
     """Traite TOUTE la file, JSON par JSON, sans intervention.
 
@@ -508,9 +519,9 @@ def run_all_queued():
                     time.sleep(pause)
             if next_queued_task() is None:
                 break
-            pause = random.randint(3600, 7200)
-            _push_log(f"JSON {fpath.name} fini. J'attends {pause // 3600}h {(pause % 3600) // 60}min avant le JSON suivant.")
-            _set_step(f"JSON {fpath.name} fini. J'attends {pause // 3600}h {(pause % 3600) // 60}min avant le JSON suivant.")
+            pause = random.randint(900, 3600)
+            _push_log(f"JSON {fpath.name} fini. J'attends {_format_pause(pause)} avant le JSON suivant.")
+            _set_step(f"JSON {fpath.name} fini. J'attends {_format_pause(pause)} avant le JSON suivant.")
             time.sleep(pause)
     finally:
         with _job_lock:
