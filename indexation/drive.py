@@ -228,7 +228,7 @@ class DriveAPI:
         page_token = None
         while True:
             params = {"q": f"'{folder_id}' in parents and trashed=false",
-                      "fields": "files(id,name,size,modifiedTime),nextPageToken",
+                      "fields": "files(id,name,size,modifiedTime,videoMediaMetadata(width,height,durationMillis)),nextPageToken",
                       "orderBy": "modifiedTime desc",
                       "pageSize": page_size,
                       "supportsAllDrives": "true"}

@@ -224,11 +224,14 @@ def videos_page(request, account=1):
             api = DriveAPI(account)
             for f in api.list_files(entry["folder_id"]):
                 size = int(f.get("size") or 0)
+                meta = f.get("videoMediaMetadata") or {}
+                w, h = meta.get("width"), meta.get("height")
                 videos.append({
                     "id": f["id"],
                     "name": f.get("name", "?"),
                     "size_mo": round(size / 1024 / 1024, 1),
                     "date": (f.get("modifiedTime", "")[:10]),
+                    "resolution": f"{w}x{h}" if w and h else "—",
                     "download_url": f"https://drive.usercontent.google.com/download?id={f['id']}&export=download&confirm=t",
                 })
             try:
