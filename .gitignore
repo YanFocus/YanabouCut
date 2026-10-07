@@ -12,6 +12,7 @@ staticfiles/
 # YanabouCut - donnees d'execution (jamais sur GitHub)
 json_du_site*.json
 job_status.json
+current_json.json
 downloaded_videos/
 job_queue/
 
