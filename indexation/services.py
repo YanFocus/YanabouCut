@@ -215,6 +215,13 @@ def run_job(searches, wait_seconds=None):
     """
     from django.conf import settings
     api_key = getattr(settings, "PIXABAY_API_KEY", "")
+    import socket
+    # Garde-fou : aucune connexion reseau ne doit pendre indefiniment
+    # (DNS ou socket bloque ne respectant pas toujours les timeouts)
+    try:
+        socket.setdefaulttimeout(60)
+    except Exception:
+        pass
 
     with _job_lock:
         if _job_state["running"]:
