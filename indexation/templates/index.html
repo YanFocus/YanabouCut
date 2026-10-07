@@ -112,8 +112,8 @@
             <h2>Charger un JSON</h2>
             <form method="POST" enctype="multipart/form-data" class="stack">
                 {% csrf_token %}
-                <label class="lbl" for="json_file">Fichier JSON de recherches</label>
-                <input id="json_file" type="file" name="json_file" accept=".json,application/json" required>
+                <label class="lbl" for="json_file">Fichiers JSON de recherches (plusieurs possibles : Ctrl+clic)</label>
+                <input id="json_file" type="file" name="json_files" accept=".json,application/json" multiple required>
                 <button type="submit" class="btn indigo">Lancer le traitement</button>
             </form>
             {% if messages %}

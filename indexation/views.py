@@ -54,29 +54,37 @@ def index(request):
             else:
                 messages.error(request, f"Toujours bloque ({problem}). Liberez de l'espace sur Drive.")
             return redirect("home")
-        json_file = request.FILES.get("json_file")
-        if not json_file:
-            messages.error(request, "Veuillez selectionner un fichier JSON.")
+        json_files = request.FILES.getlist("json_files")
+        if not json_files:
+            messages.error(request, "Veuillez selectionner au moins un fichier JSON.")
         else:
-            try:
-                raw = json_file.read().decode("utf-8")
-                data = json.loads(raw)
-                if not isinstance(data, dict) or not data:
-                    raise ValueError("Le JSON doit etre un objet non vide, ex : {\"recherche1\": \"dog in house\"}")
-                searches = {str(k): str(v) for k, v in data.items() if str(v).strip()}
-                if not searches:
-                    raise ValueError("Aucune requete valide trouvee dans le JSON.")
-                # Toujours en file + demarrage auto : tout s'enchaine seul,
-                # y compris les JSON deja en attente (pause 1h-2h entre JSON).
-                fname = enqueue_searches(searches)
-                current_json_path().write_text(json.dumps(searches, ensure_ascii=False, indent=2), encoding="utf-8")
+            queued, errors = [], []
+            for json_file in json_files:
+                try:
+                    raw = json_file.read().decode("utf-8")
+                    data = json.loads(raw)
+                    if not isinstance(data, dict) or not data:
+                        raise ValueError("objet vide ou invalide")
+                    searches = {str(k): str(v) for k, v in data.items() if str(v).strip()}
+                    if not searches:
+                        raise ValueError("aucune requete valide")
+                    # Toujours en file + demarrage auto : tout s'enchaine seul,
+                    # y compris les JSON deja en attente (pause 1h-2h entre JSON).
+                    fname = enqueue_searches(searches)
+                    queued.append((json_file.name, fname, searches))
+                except Exception as e:
+                    errors.append(f"{json_file.name} : {e}")
+            if queued:
+                # Affiche le premier fichier (traite en premier : le plus ancien)
+                current_json_path().write_text(json.dumps(queued[0][2], ensure_ascii=False, indent=2), encoding="utf-8")
                 clear_logs()
+                total_searches = sum(len(s) for _, _, s in queued)
                 if start_all_queued_async():
-                    messages.success(request, f"{len(searches)} recherche(s) : traitement lance, tout s'enchaine seul. Suivez le journal.")
+                    messages.success(request, f"{len(queued)} fichier(s), {total_searches} recherche(s) : traitement lance, tout s'enchaine seul. Suivez le journal.")
                 else:
-                    messages.success(request, f"{len(searches)} recherche(s) mise(s) en file ({fname}). Prise en charge automatique a la suite.")
-            except Exception as e:
-                messages.error(request, f"Erreur : {e}")
+                    messages.success(request, f"{len(queued)} fichier(s) mis en file ({total_searches} recherches). Prise en charge automatique a la suite.")
+            for err in errors:
+                messages.error(request, f"Fichier ignore - {err}")
         return redirect("home")
 
     site_json_path = Path(settings.SITE_JSON_PATH)
